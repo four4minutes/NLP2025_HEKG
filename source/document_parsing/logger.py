@@ -1,7 +1,43 @@
+import os
 from datetime import datetime
 
+# 전역 변수로 로그 파일 경로 설정
+LOG_FILE_PATH = None
 # 토큰 사용량 기록 파일 경로
 TOKEN_USAGE_FILE = "token_usage.txt"
+
+def initialize_logger():
+    """
+    프로그램 실행 시 한 번만 호출되어 로그 파일을 초기화합니다.
+    logs 폴더가 없으면 생성하고, 현재 시간을 기반으로 로그 파일명을 설정합니다.
+    """
+    global LOG_FILE_PATH
+    try:
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        # 현재 시간으로 로그 파일명 생성 (단, 실행 시 1회만)
+        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        LOG_FILE_PATH = os.path.join(log_dir, f"{current_time}.log")
+
+    except Exception as e:
+        print(f"Error initializing logger: {e}")
+
+def log_to_file(message: str):
+    """
+    중간처리 결과를 초기화된 로그 파일에 기록합니다.
+    """
+    try:
+        if LOG_FILE_PATH is None:
+            raise ValueError("Logger has not been initialized. Call 'initialize_logger()' first.")
+
+        # 이미 설정된 파일에 내용 추가 (append)
+        with open(LOG_FILE_PATH, "a", encoding="utf-8") as log_file:
+            log_file.write(message + "\n")
+
+    except Exception as e:
+        print(f"Error logging to file: {e}")
 
 def log_token_usage(token_count: int):
     """
