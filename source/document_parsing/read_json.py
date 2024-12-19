@@ -116,14 +116,14 @@ def process_sentence(sentence: str):
 
     # extract_predicates에서 두 리스트 반환
     event_predicates, entity_predicates = extract_predicates(modified_sentence + "。")
-    log_to_file(f"---------------------------\n추출된 사상 술어: {event_predicates if event_predicates else '추출되지 않음'}")
+    log_to_file(f"----------------------------\n추출된 사상 술어: {event_predicates if event_predicates else '추출되지 않음'}")
     log_to_file(f"추출된 개념 술어: {entity_predicates if entity_predicates else '추출되지 않음'}")
 
     # 두 리스트를 extract_predicate_argument_structure에 넘김
     predicate_argument_structures, entities = extract_predicate_argument_structure(modified_sentence + "。", event_predicates, entity_predicates)
     
     # 술어항 구조 출력
-    log_to_file("-----추출된 述語項構造-----")
+    log_to_file("------추출된 述語項構造------")
     for i, structure in enumerate(predicate_argument_structures, 1):
         log_to_file(f"({i}) {structure}")
 
@@ -131,14 +131,14 @@ def process_sentence(sentence: str):
     append_predicate_structure(predicate_argument_structures)
 
     # 엔티티 출력 및 처리
-    log_to_file("------추출된 엔티티------")
+    log_to_file("--------추출된 엔티티--------")
     for i, entity in enumerate(entities, 1):
         log_to_file(f"({i}) {entity}")
 
         # 엔티티를 entity_structure 리스트에 추가
         append_entity_info(entity)
 
-    log_to_file("---------------------------")
+    log_to_file("----------------------------")
 
     if predicate_argument_structures:
         final_sentence = process_sentence_with_residue_removal(modified_sentence, predicate_argument_structures)
