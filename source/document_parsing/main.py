@@ -23,11 +23,13 @@ def process_sentence(sentence: str):
 
     if time_and_place['time']:
         log_to_file(f"추출된 시간 표현: {time_and_place['time']}")
-        append_entity_info(time_and_place['time'])
+        for t_expr in time_and_place['time']:
+            append_entity_info(t_expr)
 
     if time_and_place['place']:
         log_to_file(f"추출된 장소 표현: {time_and_place['place']}")
-        append_entity_info(time_and_place['place'])
+        for p_expr in time_and_place['place']:
+            append_entity_info(p_expr)
 
     # extract_predicates에서 두 리스트 반환
     event_predicates, entity_predicates = extract_predicates(sentence)
