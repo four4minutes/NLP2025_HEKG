@@ -79,3 +79,19 @@ def log_token_usage(token_count: int):
 
     except Exception as e:
         print(f"Error logging token usage: {e}")
+
+def log_and_print_final_results(category, entity_structure, predicate_structure):
+    """
+    최종적으로 추출된 category, entity_structure, predicate_structure 배열을 로그로 출력하는 함수.
+    """
+    log_to_file("\n=== Category 배열 ===")
+    for item in category:
+        log_to_file(str(item))
+
+    log_to_file("\n=== Entity Structure 배열 ===")
+    for item in entity_structure:
+        log_to_file(str(item))
+
+    log_to_file("\n=== Predicate Structure 배열 ===")
+    for item in predicate_structure:
+        log_to_file(str(item))
