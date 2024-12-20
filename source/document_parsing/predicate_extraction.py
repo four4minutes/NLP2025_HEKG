@@ -282,7 +282,7 @@ def extract_predicates(sentence: str) -> tuple:
 
     return event_predicates, entity_predicates
 
-def extract_predicate_argument_structure(sentence: str, event_predicates: list, entity_predicates: list) -> tuple:
+def extract_entity_and_predicate_structures(sentence: str, event_predicates: list, entity_predicates: list, time_list: list, place_list: list) -> tuple:
     """
     문장과 추출된 사상 술어(event predicates) 및 개념 술어(entity predicates)를 기반으로
     모든 述語項構造와 엔ティティ 리스트를 생성.
@@ -291,6 +291,10 @@ def extract_predicate_argument_structure(sentence: str, event_predicates: list, 
     entities = []
 
     try:
+        # time_list, place_list를 문자열로 변환
+        time_str = ", ".join(time_list) if time_list else ""
+        place_str = ", ".join(place_list) if place_list else ""
+
         prompt = (
             "[タスク目的]\n\n"
             "入力文に対して、事象に関する述語を基に述語項構造を抽出し、概念に関する述語を基にエンティティを抽出する。\n\n"
@@ -456,24 +460,28 @@ def extract_predicate_argument_structure(sentence: str, event_predicates: list, 
             {"role": "user", "content": prompt}
         ]
 
+        # 예시 제공 부분 (기존 예시 수정 없이 유지)
         for example in examples:
             example_input_str = (
                 f"文:\n{example['input']['sentence']}\n\n"
                 f"事象述語:\n{', '.join(example['input']['event_predicates'])}\n\n"
                 f"概念述語:\n{', '.join(example['input']['entity_predicates'])}\n\n"
+                # 추후 시간/장소 표현을 예시에 추가할 수 있도록 필드를 미리 마련
+                f"時間表現:\n\n"
+                f"場所表現:\n\n"
             )
             example_output_str = example['output']
-            # user가 예시를 입력
             messages.append({"role": "user", "content": example_input_str})
-            # assistant가 예시에 대한 출력 제시
             messages.append({"role": "assistant", "content": example_output_str})
 
-        # 실제 요청 부분
         final_input = (
             f"文: {sentence}\n\n"
             f"事象述語: {', '.join(event_predicates)}\n\n"
             f"概念述語: {', '.join(entity_predicates)}\n\n"
+            f"時間表現: {time_str}\n\n"
+            f"場所表現: {place_str}\n\n"
         )
+
         messages.append({"role": "user", "content": final_input})
 
         response = client.chat.completions.create(
@@ -485,27 +493,26 @@ def extract_predicate_argument_structure(sentence: str, event_predicates: list, 
         content = response.choices[0].message.content.strip()
         log_token_usage(response.usage.total_tokens)
 
-        # 述語項構造 파싱
         predicate_argument_section = re.search(r"\[述語項構造\](.*?)\[エンティティ\]", content, re.DOTALL)
         if predicate_argument_section:
             predicate_argument_lines = predicate_argument_section.group(1).strip().split("\n")
             for line in predicate_argument_lines:
                 line = line.strip()
-                if line.startswith("("):  # "(1) ..." 형식 검사
+                if line.startswith("("):
                     structure = line.split(")", 1)[-1].strip()
                     predicate_argument_structures.append(structure)
 
-        # エンティティ 파싱
         entity_section = re.search(r"\[エンティティ\](.*)", content, re.DOTALL)
         if entity_section:
             entity_lines = entity_section.group(1).strip().split("\n")
             for line in entity_lines:
                 line = line.strip()
-                if line.startswith("("):  # "(1) ..." 형식 검사
+                if line.startswith("("):
                     entity = line.split(")", 1)[-1].strip()
                     entities.append(entity)
 
     except Exception as e:
-        print(f"Error extracting predicate-argument structure: {e}")
+        print(f"Error extracting entity and predicate structures: {e}")
+        return [], []
 
     return predicate_argument_structures, entities

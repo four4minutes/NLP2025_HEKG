@@ -1,7 +1,7 @@
 import re
 import json
-from source.document_parsing.time_and_place_extraction import extract_time_and_place, remove_expressions
-from source.document_parsing.predicate_extraction import extract_predicates, extract_predicate_argument_structure
+from source.document_parsing.time_and_place_extraction import extract_time_and_place
+from source.document_parsing.predicate_extraction import extract_predicates, extract_entity_and_predicate_structures
 from source.document_parsing.residue_extraction import process_sentence_with_residue_removal
 from source.document_parsing.logger import initialize_logger, log_to_file, log_and_print_final_results
 from node_maker import append_category_info, append_entity_info, append_predicate_structure, get_category, get_entity_structure, get_predicate_structure
@@ -29,18 +29,13 @@ def process_sentence(sentence: str):
         log_to_file(f"추출된 장소 표현: {time_and_place['place']}")
         append_entity_info(time_and_place['place'])
 
-    expressions_to_remove = time_and_place['time'] + time_and_place['place']
-    modified_sentence = remove_expressions(sentence, expressions_to_remove) if expressions_to_remove else sentence
-    if expressions_to_remove:
-        log_to_file(f"시간 및 장소 표현 제거 후: {modified_sentence}")
-
     # extract_predicates에서 두 리스트 반환
-    event_predicates, entity_predicates = extract_predicates(modified_sentence + "。")
+    event_predicates, entity_predicates = extract_predicates(sentence)
     log_to_file(f"----------------------------\n추출된 사상 술어: {event_predicates if event_predicates else '추출되지 않음'}")
     log_to_file(f"추출된 개념 술어: {entity_predicates if entity_predicates else '추출되지 않음'}")
 
-    # 두 리스트를 extract_predicate_argument_structure에 넘김
-    predicate_argument_structures, entities = extract_predicate_argument_structure(modified_sentence + "。", event_predicates, entity_predicates)
+    # 두 리스트를 extract_entity_and_predicate_structures에 넘김
+    predicate_argument_structures, entities = extract_entity_and_predicate_structures(sentence, event_predicates, entity_predicates, time_and_place['time'], time_and_place['place'])
     
     # 술어항 구조 출력
     log_to_file("------추출된 述語項構造------")
@@ -59,7 +54,7 @@ def process_sentence(sentence: str):
     log_to_file("----------------------------")
 
     if predicate_argument_structures:
-        final_sentence = process_sentence_with_residue_removal(modified_sentence, predicate_argument_structures)
+        final_sentence = process_sentence_with_residue_removal(sentence, predicate_argument_structures)
         log_to_file(f"술어항 구조 표현 제거 후: {final_sentence}")
     else:
         log_to_file("[DEBUG] 술어항 구조가 생성되지 않았습니다. 수정 작업을 생략합니다.")
