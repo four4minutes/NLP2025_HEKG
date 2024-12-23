@@ -1,6 +1,7 @@
 from openai import OpenAI
 import unicodedata
 import re
+from source.document_parsing.logger import log_token_usage
 
 client = OpenAI()
 
@@ -76,6 +77,7 @@ def extract_time_and_place(sentence: str) -> dict:
         )
 
         content = response.choices[0].message.content.strip()
+        log_token_usage(response.usage.total_tokens)
 
         time_and_place = {
             "time": [],
