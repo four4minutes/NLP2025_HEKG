@@ -29,7 +29,6 @@ def append_edge_info(edge_type, from_node_index, to_node_index):
     log_to_file(f"[{from_content}] --({edge_type})--> [{to_content}]")
 
     index_number_edge += 1
-    index_number_edge += 1
 
 def get_edge():
     """
