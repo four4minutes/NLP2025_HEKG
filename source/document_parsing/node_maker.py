@@ -6,12 +6,12 @@ category = []  # 카테고리 정보를 저장할 배열
 entity_structure = []  # 엔티티 정보를 저장할 배열
 predicate_structure = []  # 술어항 구조 정보를 저장할 배열
 
-def append_category_info(key):
+def append_category_info(key, level=0, cat_type='項目名'):
     global index_number_node
     category_info = {
         'index': index_number_node,
-        'hierarchical_level': 0,
-        'category_type': '項目名',
+        'hierarchical_level': level,
+        'category_type': cat_type,
         'category_title': key
     }
     category.append(category_info)

@@ -1,6 +1,7 @@
 # main.py
 
 import json
+import os
 from source.document_parsing.logger import (
     initialize_logger, 
     log_and_print_final_results,
@@ -18,11 +19,13 @@ from json_processor import process_json
 initialize_logger()
 
 # 2) JSON 데이터 로드
-with open('test.json', 'r', encoding='utf-8') as file:
+input_filename = "test.json"
+filename_only = os.path.splitext(input_filename)[0]
+with open(input_filename, 'r', encoding='utf-8') as file:
     data = json.load(file)
 
 # 3) JSON 전체 처리
-process_json(data)
+process_json(data, filename_only)
 
 # 4) 최종 결과 출력 (Category, Entity, Predicate, Edge)
 category = get_category()

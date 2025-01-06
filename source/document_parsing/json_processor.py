@@ -1,6 +1,5 @@
 # json_processor.py
 
-import re
 from source.document_parsing.logger import (
     log_to_file,
     record_similarity_logs
@@ -20,7 +19,7 @@ from source.document_parsing.similarity_based_equivalent_extraction import (
 from source.document_parsing.text_utils import is_heading_start, split_heading_and_rest
 
 
-def process_item(key, value, parent_category_index=None):
+def process_item(key, value, parent_category_index=None, hierarchical_level=0):
     """
     기존 main.py에서 작성되었던 process_item 함수 그대로 옮김.
     - key 있으면 => 카테고리
@@ -34,17 +33,23 @@ def process_item(key, value, parent_category_index=None):
     # 1) key 있으면 => 카테고리
     if key:
         log_to_file(f"[카테고리] {key}")
-        current_category_index = append_category_info(key)
+        current_category_index = append_category_info(
+            key,
+            level=hierarchical_level,
+            cat_type='項目名'
+        )
+        if parent_category_index is not None and parent_category_index != current_category_index:
+            append_edge_info("sub", parent_category_index, current_category_index)
 
     # 2) 타입 분기
     if isinstance(value, dict):
-        for sub_key, sub_value in value.items():
-            process_item(sub_key, sub_value, current_category_index)
+        for sub_key, sub_val in value.items():
+            process_item(sub_key, sub_val, current_category_index, hierarchical_level)
         return
 
     if isinstance(value, list):
         for sub_item in value:
-            process_item("", sub_item, current_category_index)
+            process_item("", sub_item, current_category_index, hierarchical_level)
         return
 
     if isinstance(value, str):
@@ -107,17 +112,30 @@ def process_item(key, value, parent_category_index=None):
                 append_edge_info("sub", current_category_index, e_idx)
 
 
-def process_json(data):
+def process_json(data, filename):
     """
     1) JSON -> 노드 생성
     2) 유사도 검사 + equivalent 엣지
     3) '유사도등록' 로그를 logger에 기록
     """
-    # 1) 모든 JSON 항목 순회 -> 노드 생성
-    for key, value in data.items():
-        process_item(key, value, parent_category_index=None)
+    # 1) 루트 카테고리 노드 생성
+    root_category_index = append_category_info(
+        key=filename,
+        level=3,
+        cat_type='カテゴリ名'
+    )
 
-    # 2) 유사도 검사 + equivalent
+    # 2) 모든 JSON 항목 순회 -> 노드 생성
+    for doc_name, doc_value in data.items():
+        doc_category_index = append_category_info(
+            key=doc_name,
+            level=2,
+            cat_type='文書名'
+        )
+        append_edge_info("sub", root_category_index, doc_category_index)
+        process_item("", doc_value, parent_category_index=doc_category_index, hierarchical_level=1)
+
+    # 3) 유사도 검사 + equivalent
     entity_nodes = get_entity_structure()
     predicate_nodes = get_predicate_structure()
     run_similarity_check(entity_nodes, predicate_nodes)
