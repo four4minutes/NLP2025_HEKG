@@ -1,38 +1,24 @@
 # json_processor.py
 
 import re
-from source.document_parsing.logger import log_to_file
+from source.document_parsing.logger import (
+    log_to_file,
+    record_similarity_logs
+)
 from source.document_parsing.node_maker import (
     append_category_info,
-    append_entity_info
+    append_entity_info,
+    get_entity_structure,
+    get_predicate_structure
 )
 from source.document_parsing.edge_maker import append_edge_info
+from source.document_parsing.sentence_parser import process_sentence
+from source.document_parsing.similarity_based_equivalent_extraction import (
+    run_similarity_check,
+    create_equivalent_edges
+)
+from source.document_parsing.text_utils import is_heading_start, split_heading_and_rest
 
-# ----- 문장 해석 로직(기존 process_sentence)을 옮긴 모듈 임포트 -----
-from sentence_parser import process_sentence
-
-def is_heading_start(item: str) -> bool:
-    """
-    '１．' '1.' '2.' 등등, 혹은 '注' 같은 패턴에 매칭되면 heading 으로 판정
-    (기존 main.py의 is_heading_start 그대로)
-    """
-    item_normalized = re.sub(r'[０-９]', lambda x: chr(ord(x.group(0)) - 0xFEE0), item)
-    return bool(re.match(r'^\d+\.|^[・（）注]+', item_normalized))
-
-def split_heading_and_rest(value: str):
-    """
-    value가 heading에 해당하면, heading prefix와 나머지(rest)를 분리해서 반환.
-    (기존 main.py의 split_heading_and_rest 그대로)
-    """
-    item_normalized = re.sub(r'[０-９]', lambda x: chr(ord(x.group(0)) - 0xFEE0), value)
-    pattern = r'^(\d+\.|[・（）注]+)\s?(.*)$'
-    match = re.match(pattern, item_normalized)
-    if match:
-        heading_prefix = match.group(1).strip()
-        rest = match.group(2).strip()
-        return heading_prefix, rest
-    else:
-        return None, None
 
 def process_item(key, value, parent_category_index=None):
     """
@@ -63,6 +49,10 @@ def process_item(key, value, parent_category_index=None):
 
     if isinstance(value, str):
         # (A) heading 검사: "1. ..." "・..." 등
+        if not value.strip():
+            log_to_file("[DEBUG] 빈 문자열 발견, 처리 건너뜀.")
+            return
+        
         if is_heading_start(value):
             # heading prefix & rest 분리
             heading_prefix, rest = split_heading_and_rest(value)
@@ -119,8 +109,19 @@ def process_item(key, value, parent_category_index=None):
 
 def process_json(data):
     """
-    기존 main.py 하단의 process_json(data) 그대로.
-    최상위 JSON 키/값 순회
+    1) JSON -> 노드 생성
+    2) 유사도 검사 + equivalent 엣지
+    3) '유사도등록' 로그를 logger에 기록
     """
+    # 1) 모든 JSON 항목 순회 -> 노드 생성
     for key, value in data.items():
         process_item(key, value, parent_category_index=None)
+
+    # 2) 유사도 검사 + equivalent
+    entity_nodes = get_entity_structure()
+    predicate_nodes = get_predicate_structure()
+    run_similarity_check(entity_nodes, predicate_nodes)
+    create_equivalent_edges()
+    
+    #클러스터링 방식의 equivalent 관계 부여
+    #cluster_equivalent_edges(entity_nodes, predicate_nodes, n_clusters=5)

@@ -73,7 +73,7 @@ def extract_expressions_from_structure(
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
             else:
                 # 혹시 모르는 케이스
-                print(f"정의되지 않은 요소 출현: {case_type}")
+                print(f"정의되지 않은 요소 출현: {case_type}") 
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
 
     # 이제 정렬 기준 지정
@@ -163,5 +163,33 @@ def convert_predicate_to_text(predicate_node: dict) -> str:
 
     # extract_expressions_from_structure를 호출
     with_case, _ = extract_expressions_from_structure(joined_text, [joined_text])
-    final_str = " ".join(with_case)
+    final_str = "".join(with_case)
     return final_str
+
+def is_heading_start(text: str) -> bool:
+    """
+    '１．' '1.' '2.' 등등, 혹은 '注' 등으로 시작하거나,
+    [・（）注]+ 등이 전부인 경우를 판단하는 함수.
+    """
+    text = normalize_text(text)
+    text = re.sub(r'[０-９]', lambda x: chr(ord(x.group(0)) - 0xFEE0), text)
+
+    # 기존 json_processor.py의 패턴
+    # ^(\d+\.|[・（）注]+)   # 시작 부분
+    pattern = r'^(\d+\.|[・（）注]+)$'
+    # 간단 판별
+    return bool(re.match(pattern, text.strip()))
+
+def split_heading_and_rest(value: str):
+    """
+    value가 heading에 해당하면, heading prefix와 나머지(rest)를 분리해서 반환.
+    """
+    item_normalized = re.sub(r'[０-９]', lambda x: chr(ord(x.group(0)) - 0xFEE0), value)
+    pattern = r'^(\d+\.|[・（）注]+)\s?(.*)$'
+    match = re.match(pattern, item_normalized)
+    if match:
+        heading_prefix = match.group(1).strip()
+        rest = match.group(2).strip()
+        return heading_prefix, rest
+    else:
+        return None, None

@@ -99,3 +99,41 @@ def log_and_print_final_results(category, entity_structure, predicate_structure,
     log_to_file("\n=== Edge 배열 ===")
     for item in edge:
         log_to_file(str(item))
+
+def produce_similarity_report(entity_nodes, predicate_nodes):
+    from source.document_parsing.similarity_based_equivalent_extraction import (
+        similarity_score_cache, similarity_registration_logs,
+        gather_all_nodes, SIMILARITY_THRESHOLD_LOG
+    )
+
+    log_to_file("\n=== [참고자료] 유사도 계산결과===\n")
+    for line in similarity_registration_logs:
+        log_to_file(line)
+
+    all_nodes = gather_all_nodes(entity_nodes, predicate_nodes)
+
+    # 유사도 캐시에 이미 (node_i) -> list[(score,j,text_j)] 저장
+    for node_i in all_nodes:
+        idx_i = node_i["index"]
+        text_i = node_i["text"]
+        if idx_i not in similarity_score_cache:
+            continue
+
+        above_03 = [
+            (sc, j, t) for (sc, j, t) in similarity_score_cache[idx_i]
+            if sc >= SIMILARITY_THRESHOLD_LOG
+        ]
+        if not above_03:
+            continue
+
+        log_to_file(f"\n[기준노드 idx={idx_i}, text='{text_i}'] :")
+        for (sc, j_idx, j_text) in above_03:
+            log_to_file(f"   -> score={sc:.3f}, idx={j_idx}, text='{j_text}'")
+
+def record_similarity_logs(log_lines):
+    """
+    similarity_calculation.run_similarity_check(...)가 돌려준
+    '유사도등록' 로그 메시지들을 실제 로그파일에 기록.
+    """
+    for line in log_lines:
+        log_to_file(line)
