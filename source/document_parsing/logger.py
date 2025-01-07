@@ -80,12 +80,14 @@ def log_token_usage(token_count: int):
     except Exception as e:
         print(f"Error logging token usage: {e}")
 
-def log_and_print_final_results(category, entity_structure, predicate_structure, edge):
+def log_and_print_final_results(doc_name,category_structure, entity_structure, predicate_structure, edge):
     """
     최종적으로 추출된 category, entity_structure, predicate_structure 배열을 로그로 출력하는 함수.
     """
+    log_to_file(f"\n===== [문서단위 결과: {doc_name}] =====")
+
     log_to_file("\n=== Category 배열 ===")
-    for item in category:
+    for item in category_structure:
         log_to_file(str(item))
 
     log_to_file("\n=== Entity Structure 배열 ===")
@@ -99,6 +101,8 @@ def log_and_print_final_results(category, entity_structure, predicate_structure,
     log_to_file("\n=== Edge 배열 ===")
     for item in edge:
         log_to_file(str(item))
+        
+    log_to_file("=============================================\n")
 
 def produce_similarity_report(entity_nodes, predicate_nodes):
     from source.document_parsing.similarity_based_equivalent_extraction import (

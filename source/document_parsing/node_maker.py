@@ -2,11 +2,11 @@
 # 노드(카테고리, 엔티티, 술어항 구조) 관리를 담당하는 모듈
 
 index_number_node = 1  # 전역 인덱스 변수
-category = []  # 카테고리 정보를 저장할 배열
+category_structure = []  # 카테고리 정보를 저장할 배열
 entity_structure = []  # 엔티티 정보를 저장할 배열
 predicate_structure = []  # 술어항 구조 정보를 저장할 배열
 
-def append_category_info(key, level=0, cat_type='項目名'):
+def append_category_info(key, level=0, cat_type='項目名', doc_created_node_indexes=None):
     global index_number_node
     category_info = {
         'index': index_number_node,
@@ -14,13 +14,16 @@ def append_category_info(key, level=0, cat_type='項目名'):
         'category_type': cat_type,
         'category_title': key
     }
-    category.append(category_info)
+    category_structure.append(category_info)
+    if doc_created_node_indexes is not None:
+        doc_created_node_indexes.add(index_number_node)
+
     current_index = index_number_node
     index_number_node += 1
 
     return current_index
 
-def append_entity_info(entity_value):
+def append_entity_info(entity_value, doc_created_node_indexes=None):
     global index_number_node
     if isinstance(entity_value, list):
         entity_value = entity_value[0]  # 리스트일 경우 첫 번째 요소만 사용
@@ -30,12 +33,15 @@ def append_entity_info(entity_value):
         'entity': entity_value
     }
     entity_structure.append(entity_info)
+    if doc_created_node_indexes is not None:
+        doc_created_node_indexes.add(index_number_node)
+    
     current_index = index_number_node
     index_number_node += 1
 
     return current_index
 
-def append_predicate_structure(predicate_argument_structures):
+def append_predicate_structure(predicate_argument_structures, doc_created_node_indexes=None):
     global index_number_node
     import re
 
@@ -56,13 +62,16 @@ def append_predicate_structure(predicate_argument_structures):
             'modifier': modifier_match.group(0) if modifier_match else ""
         }
         predicate_structure.append(predicate_info)
+        if doc_created_node_indexes is not None:
+            doc_created_node_indexes.add(index_number_node)
+        
         created_node_indexes.append(index_number_node)
         index_number_node += 1
 
     return created_node_indexes
 
-def get_category():
-    return category
+def get_category_structure():
+    return category_structure
 
 def get_entity_structure():
     return entity_structure
@@ -76,7 +85,7 @@ def get_node_content_by_index(node_index: int):
     사람이 알아보기 쉬운 문자열을 리턴한다.
     """
     # 1) 카테고리에서 검색
-    for cat in category:
+    for cat in category_structure:
         if cat["index"] == node_index:
             # 예: "事例名称" (category_title)
             return cat.get("category_title", f"category_idx:{node_index}")

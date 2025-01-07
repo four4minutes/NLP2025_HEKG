@@ -6,7 +6,7 @@ from source.document_parsing.text_utils import convert_predicate_to_text, is_hea
 
 model = SentenceTransformer('stsb-xlm-r-multilingual')
 SIMILARITY_THRESHOLD_EQUIVALENT = 0.8  # equivalent 기준
-SIMILARITY_THRESHOLD_LOG = 0.3        # 로그 참고자료표에 표시할 기준
+SIMILARITY_THRESHOLD_LOG = 0.5        # 로그 참고자료표에 표시할 기준
 
 # (A) 모든 노드 쌍의 유사도 및 유사도등록 로그를 저장
 similarity_score_cache = {} 

@@ -2,18 +2,15 @@
 
 import json
 import os
-from source.document_parsing.logger import (
-    initialize_logger, 
-    log_and_print_final_results,
-    produce_similarity_report
-)
+from source.document_parsing.logger import initialize_logger
 from source.document_parsing.node_maker import (
-    get_category,
+    get_category_structure,
     get_entity_structure,
     get_predicate_structure
 )
 from source.document_parsing.edge_maker import get_edge
 from json_processor import process_json
+from csv_exporter import export_to_csv
 
 # 1) 로그 초기화
 initialize_logger()
@@ -27,13 +24,9 @@ with open(input_filename, 'r', encoding='utf-8') as file:
 # 3) JSON 전체 처리
 process_json(data, filename_only)
 
-# 4) 최종 결과 출력 (Category, Entity, Predicate, Edge)
-category = get_category()
-entity_structure = get_entity_structure()
-predicate_structure = get_predicate_structure()
-edge = get_edge()
-
-log_and_print_final_results(category, entity_structure, predicate_structure, edge)
-
-# 5) 내림차순 유사도 보고(참고자료)
-produce_similarity_report(entity_structure, predicate_structure)
+# 4) 처리 완료 후, 최종적으로 CSV로 내보내기
+category_list = get_category_structure()
+entity_list = get_entity_structure()
+predicate_list = get_predicate_structure()
+edge_list = get_edge()
+export_to_csv(category_list, entity_list, predicate_list, edge_list, "results")

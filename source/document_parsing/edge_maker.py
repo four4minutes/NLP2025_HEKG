@@ -6,7 +6,7 @@ from source.document_parsing.logger import log_to_file
 index_number_edge = 1  # 전역 인덱스 변수
 edge = []              # 모든 엣지를 저장할 리스트
 
-def append_edge_info(edge_type, from_node_index, to_node_index):
+def append_edge_info(edge_type, from_node_index, to_node_index, doc_created_edge_indexes=None):
     """
     새로운 엣지를 edge 리스트에 추가하고, index_number_edge를 1씩 증가시킵니다.
     
@@ -22,6 +22,8 @@ def append_edge_info(edge_type, from_node_index, to_node_index):
         'to': to_node_index
     }
     edge.append(edge_info)
+    if doc_created_edge_indexes is not None:
+        doc_created_edge_indexes.add(index_number_edge)
     
     from_content = get_node_content_by_index(from_node_index)
     to_content = get_node_content_by_index(to_node_index)
