@@ -73,7 +73,7 @@ def extract_time_and_place(sentence: str) -> dict:
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
-            temperature=0.2
+            temperature=0.0
         )
 
         content = response.choices[0].message.content.strip()

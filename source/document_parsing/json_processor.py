@@ -140,7 +140,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
                         if not s:
                             continue
                         # 문장 해석
-                        created_nodes = process_sentence(s + "。")
+                        created_nodes = process_sentence(s + "。",doc_created_indexes)
                         if current_category_index and created_nodes:
                             for cn in created_nodes:
                                 add_node_to_current_item(cn, "predicate")
@@ -164,7 +164,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
                 s = s.strip()
                 if not s:
                     continue
-                created_nodes = process_sentence(s + "。")
+                created_nodes = process_sentence(s + "。",doc_created_indexes)
                 if current_category_index and created_nodes:
                     for cn in created_nodes:
                         add_node_to_current_item(cn, "predicate")

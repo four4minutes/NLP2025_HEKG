@@ -2,16 +2,17 @@
 
 import re
 from source.document_parsing.logger import log_to_file
-from source.document_parsing.node_maker import append_entity_info, append_predicate_structure
+from source.document_parsing.node_maker import append_entity_info, append_predicate_structure, get_predicate_structure
 from source.document_parsing.edge_maker import append_edge_info
 from source.document_parsing.time_and_place_extraction import extract_time_and_place
 from source.document_parsing.predicate_extraction import (
     extract_predicates,
     extract_entity_and_predicate_structures
 )
-from source.document_parsing.text_utils import process_sentence_with_residue_removal
+from source.document_parsing.text_utils import process_sentence_with_residue_removal, convert_predicate_to_text
+from causal_relationship_extraction import extract_causal_relationship
 
-def process_sentence(sentence: str):
+def process_sentence(sentence: str, doc_created_indexes=None):
     # 1) 문장 로깅
     log_to_file("\n----------------------------")
     log_to_file(f"문장: {sentence}")
@@ -22,8 +23,12 @@ def process_sentence(sentence: str):
     time_expressions = time_and_place['time']
     place_expressions = time_and_place['place']
 
-    #    이후 생성할 노드들의 정보(offset, type 등)를 저장할 리스트
-    created_details = []
+    # created_nodes_in_sentence는 문장 내에서 추출한 "노드"들의 정보를 담아두는 리스트
+    # - 노드 정보: 텍스트(text), 노드 타입(type: time/place/predicate/entity 등), 
+    #   문장 내 시작 위치(offset), 노드 인덱스(index) 등을 저장합니다.
+    # - offset은 해당 텍스트가 문장 내에서 시작하는 인덱스로, 노드 정렬 및 
+    #   노드 간 거리 계산(엣지 연결)에 활용
+    created_nodes_in_sentence = []
 
     # 3) [노드] 시간 표현 노드 생성
     #    추출된 time_expressions 각각에 대해 append_entity_info -> time 노드 생성
@@ -34,7 +39,7 @@ def process_sentence(sentence: str):
             if offset < 0:
                 offset = 999999
             node_idx = append_entity_info(t_expr)
-            created_details.append({
+            created_nodes_in_sentence.append({
                 "index": node_idx,
                 "text": t_expr,
                 "offset": offset,
@@ -50,7 +55,7 @@ def process_sentence(sentence: str):
             if offset < 0:
                 offset = 999999
             node_idx = append_entity_info(p_expr)
-            created_details.append({
+            created_nodes_in_sentence.append({
                 "index": node_idx,
                 "text": p_expr,
                 "offset": offset,
@@ -91,10 +96,16 @@ def process_sentence(sentence: str):
         offset = sentence.find(main_pred_text)
         if offset < 0:
             offset = 999999
-
-        created_details.append({
+        
+        pred_dict = next((p for p in get_predicate_structure() if p["index"] == idx), None)
+        if pred_dict is not None:
+            text = convert_predicate_to_text(pred_dict).strip()
+        else:
+            text = main_pred_text
+        
+        created_nodes_in_sentence.append({
             "index": idx,
-            "text": main_pred_text,
+            "text": text,
             "offset": offset,
             "type": "predicate"
         })
@@ -110,7 +121,7 @@ def process_sentence(sentence: str):
         if offset < 0:
             offset = 999999
         ent_idx = append_entity_info(ent_str)
-        created_details.append({
+        created_nodes_in_sentence.append({
             "index": ent_idx,
             "text": ent_str,
             "offset": offset,
@@ -129,16 +140,16 @@ def process_sentence(sentence: str):
 
     # 9) [엣지] info_SpecificTime / info_SpecificPlace 엣지 생성
     #    문장 내 offset 순으로 노드들을 정렬 -> time/place 노드는 뒤쪽에 있는 predicate/entity 중 가장 가까운 노드와 연결
-    created_details_sorted = sorted(created_details, key=lambda x: x["offset"])
+    created_nodes_sorted = sorted(created_nodes_in_sentence, key=lambda x: x["offset"])
 
-    for i, c in enumerate(created_details_sorted):
+    for i, c in enumerate(created_nodes_sorted):
         if c["type"] in ("time", "place"):
             from_node_type_candidates = ("predicate", "entity")
             min_dist = 999999
             chosen_idx = None
 
-            for j in range(i+1, len(created_details_sorted)):
-                nxt = created_details_sorted[j]
+            for j in range(i+1, len(created_nodes_sorted)):
+                nxt = created_nodes_sorted[j]
                 if nxt["type"] not in from_node_type_candidates:
                     continue
 
@@ -149,8 +160,16 @@ def process_sentence(sentence: str):
 
             if chosen_idx is not None:
                 edge_type = "info_SpecificTime" if c["type"] == "time" else "info_SpecificPlace"
-                append_edge_info(edge_type, from_node_index=chosen_idx, to_node_index=c["index"])
+                append_edge_info(edge_type, from_node_index=chosen_idx, to_node_index=c["index"], doc_created_edge_indexes=doc_created_indexes)
 
-    # 10) 최종적으로 생성된 노드들의 인덱스 리스트를 반환
-    all_created_indexes = [d["index"] for d in created_details]
+    # 10) 문장 + 노드 정보를 이용해 인과관계 추출
+    causal_node_list = []
+    for n in created_nodes_in_sentence:
+        if n["type"] in ("predicate", "entity"):
+            causal_node_list.append({"index": n["index"], "text": n["text"]})   
+
+    extract_causal_relationship(sentence, causal_node_list, doc_created_indexes)
+
+    # 11) 최종적으로 생성된 노드들의 인덱스 리스트를 반환
+    all_created_indexes = [d["index"] for d in created_nodes_in_sentence]
     return all_created_indexes
