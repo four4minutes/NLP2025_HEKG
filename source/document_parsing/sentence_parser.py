@@ -13,7 +13,8 @@ from source.document_parsing.text_utils import process_sentence_with_residue_rem
 
 def process_sentence(sentence: str):
     # 1) 문장 로깅
-    log_to_file(f"\n문장: {sentence}")
+    log_to_file("\n----------------------------")
+    log_to_file(f"문장: {sentence}")
 
     # 2) [노드] 시간/장소 표현 추출
     #    sentence + "。" 로 extract_time_and_place 호출 -> time_expressions, place_expressions

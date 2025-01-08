@@ -97,9 +97,9 @@ def run_similarity_check(entity_nodes, predicate_nodes):
                     f"[유사도등록] {text_i} --(equivalent)--> {text_j} (score={score_val:.2f})"
                 )
 
-def create_equivalent_edges():
+def create_equivalent_edges(doc_created_edge_indexes):
     for parent_entry in similarity_info:
         p_idx = parent_entry["parent_index"]
         for child in parent_entry["children"]:
             c_idx = child["index"]
-            append_edge_info("equivalent", p_idx, c_idx)
+            append_edge_info("equivalent", p_idx, c_idx, doc_created_edge_indexes)
