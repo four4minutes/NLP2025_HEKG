@@ -16,7 +16,7 @@ from csv_exporter import export_to_csv
 initialize_logger()
 
 # 2) JSON 데이터 로드
-input_filename = "test.json"
+input_filename = "機械.json"
 filename_only = os.path.splitext(input_filename)[0]
 with open(input_filename, 'r', encoding='utf-8') as file:
     data = json.load(file)
