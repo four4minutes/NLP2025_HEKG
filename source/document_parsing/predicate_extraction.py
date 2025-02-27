@@ -1,6 +1,7 @@
 import re
 from openai import OpenAI
 from source.document_parsing.logger import log_token_usage
+from source.document_parsing.text_utils import fix_predicate_structure_text
 
 client = OpenAI()
 
@@ -492,12 +493,12 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
                 },
                 "output": "[述語項構造]\n"
                         "(1) 開催される(述語), 東京ビッグサイト4階(デ格), アニメのフィギュア(外の関係)\n"
-                        "(2) 立ち(述語), 警備員1人(ガ格), 先頭に(ニ格)\n"
-                        "(3) 誘導し(述語), 警備員1人(ガ格)\n"
-                        "(4) 乗り始めた(述語), エスカレーター(ニ格), 多くの客(ガ格)\n"
+                        "(2) 直結する(述語), アニメのフィギュアの展示・即売会場(ニ格), エスカレーター(外の関係)\n"
+                        "(3) 立ち(述語), 警備員1人(ガ格), 先頭に(ニ格)\n"
+                        "(4) 誘導し(述語), 警備員1人(ガ格)\n"
+                        "(5) 乗り始めた(述語), エスカレーター(ニ格), 多くの客(ガ格)\n"
                         "[エンティティ]\n"
-                        "(1) アニメのフィギュアの展示・即売会場に直結するエスカレーター\n"
-                        "(2) 開場"
+                        "(1) 開場"
             },
             {
                 "input": {
@@ -803,7 +804,8 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
                 line = line.strip()
                 if line.startswith("("):
                     structure = line.split(")", 1)[-1].strip()
-                    predicate_argument_structures.append(structure)
+                    fixed_structure = fix_predicate_structure_text(structure)
+                    predicate_argument_structures.append(fixed_structure)
 
         entity_section = re.search(r"\[エンティティ\](.*)", content, re.DOTALL)
         if entity_section:

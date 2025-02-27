@@ -19,6 +19,9 @@ CASE_MARKERS = {
     "ニタイスル": "に対する"
 }
 
+# 불용어 정의
+STOP_WORDS = {"が", "で", "した", "に", "する", "を", "から", "の", "へ"}
+
 def normalize_text(text: str) -> str:
     text = text.strip()
     text = text.replace("（", "(").replace("）", ")")
@@ -30,73 +33,68 @@ def extract_expressions_from_structure(
     predicate_argument_structures: list
 ) -> tuple:
     """
-    (수정판)
-    1) 항상 격요소를 다음 순서로 정렬:
-       - ガ格(=0) -> 기타格(=1) -> 修飾(=2) -> 述語(=3) -> 그 외(=4)
-    2) CASE_MARKERS에 없는 격요소는 콘솔 메시지 출력 후,
-       '格'을 제거한 문자열(카타카나 등)으로 붙인다.
-    3) expressions_with_case / expressions_without_case 반환
+    (修正版)
+    1) 常に、以下の順序で各表現を整列する:
+       - ガ格 (0)
+       - ガ格以外の格要素 (外の関係以外) (1)
+       - 修飾 (2)
+       - 述語 (3)
+       - 外の関係 (4)
+    2) CASE_MARKERS に定義されていない格要素の場合、'格' を除去した文字列を使用する。
+    3) expressions_with_case と expressions_without_case のタプルを返す。
     """
-
     expressions_with_case = []
     expressions_without_case = []
 
     splitted_structures = []
     for structure in predicate_argument_structures:
         structure = normalize_text(structure)
-        # 콤마(,) 기준으로 분할
+        # カンマで分割
         splitted_structures.extend([s.strip() for s in structure.split(",") if s.strip()])
 
-    # 임시 저장: (expr_with_case, expr_no_case, case_type)
     tmp_list = []
-
     for structure in splitted_structures:
         structure = normalize_text(structure)
-        # 예: "車両(ガ格)" → noun_or_modifier="車両", case="ガ格"
-        matches = re.findall(r"^(.*)\((述語|修飾|[^()]+格)\)$", structure)
+        # 例："車両(ガ格)" や "義務(外の関係)" のように抽出
+        matches = re.findall(r"^(.*)\((.*?)\)$", structure)
         for noun_or_modifier, case_type in matches:
             normalized_expression = normalize_text(noun_or_modifier)
+            case_type = case_type.strip()
 
-            if case_type.endswith("格"):
+            if case_type == "外の関係":
+                # 外の関係はそのまま
+                tmp_list.append((normalized_expression, normalized_expression, case_type))
+            elif case_type.endswith("格"):
+                # 格要素の場合、CASE_MARKERS に定義されているか否かにかかわらず
                 if case_type in CASE_MARKERS:
-                    # 정의된 격 조사
                     expression_with_case = f"{normalized_expression}{CASE_MARKERS[case_type]}"
-                    tmp_list.append((expression_with_case, normalized_expression, case_type))
                 else:
-                    # 정의되지 않은 격 조사
-                    # 콘솔 출력
                     print(f"정의되지 않은 격요소 출현: {case_type}")
-                    # "カラ格" → "カラ"
                     unknown_marker = re.sub(r'格$', '', case_type)
                     expression_with_case = f"{normalized_expression}{unknown_marker}"
-                    tmp_list.append((expression_with_case, normalized_expression, case_type))
-
+                tmp_list.append((expression_with_case, normalized_expression, case_type))
             elif case_type in ["述語", "修飾"]:
-                # 격 조사 아닌 경우 (述語, 修飾)
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
             else:
-                # 혹시 모르는 케이스
-                print(f"정의되지 않은 요소 출현: {case_type}") 
+                print(f"정의되지 않은 요소 출현: {case_type}")
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
 
-    # 이제 정렬 기준 지정
     def sort_key(item):
         # item: (expr_with_case, expr_no_case, case_type)
         case_type = item[2]
         if case_type == "ガ格":
             return 0
-        elif case_type.endswith("格") and case_type != "ガ格":
+        elif case_type.endswith("格") and case_type != "ガ格" and case_type != "外の関係":
             return 1
         elif case_type == "修飾":
             return 2
         elif case_type == "述語":
             return 3
-        else:
+        else:  
             return 4
 
     tmp_sorted = sorted(tmp_list, key=sort_key)
 
-    # sorted된 tmp_list를 expressions_with_case / without_case 에 추가
     for expr_with_case, expr_no_case, case_type in tmp_sorted:
         expressions_with_case.append(expr_with_case)
         expressions_without_case.append(expr_no_case)
@@ -196,3 +194,42 @@ def split_heading_and_rest(value: str):
         return heading_prefix, rest
     else:
         return None, None
+    
+def fix_predicate_structure_text(structure: str) -> str:
+    """
+    述語項構造をカンマ区切りで受け取り、
+    "テキスト(末尾) (格要素)" の形式を正規表現で抽出し、
+    もしCASE_MARKERSに定義されている格要素なら末尾の調査を除去し、
+    それ以外はそのまま返す。
+
+    例:
+      "地上で(デ格)" → CASE_MARKERSに「デ格」が定義されていれば "で"
+      に一致するか確認し、一致すれば "地上(デ格)" に修正。
+      未定義であれば変更せず元の文字列を返す。
+    """
+    segments = [seg.strip() for seg in structure.split(",")]
+    fixed_segments = []
+    for seg in segments:
+        # 例: "地上で(デ格)" -> base_text="地上", trailing="で", case_type="デ格"
+        m = re.match(r"^(.*?)(\S*)\(([^)]+)\)$", seg)
+        if m:
+            base_text = m.group(1)
+            trailing = m.group(2)
+            case_type = m.group(3).strip()
+
+            if case_type in CASE_MARKERS:
+                # 정의된 격요소인 경우에만 trailing 체크
+                if trailing == CASE_MARKERS[case_type]:
+                    # 맨 뒤 조사 제거하여 "base_text(case_type)"로 교체
+                    fixed_seg = f"{base_text}({case_type})"
+                else:
+                    fixed_seg = seg
+            else:
+                # CASE_MARKERS에 없는 격요소이면 그대로 둠
+                fixed_seg = seg
+            fixed_segments.append(fixed_seg)
+        else:
+            # 일치하지 않으면 그대로
+            fixed_segments.append(seg)
+
+    return ", ".join(fixed_segments)

@@ -100,6 +100,7 @@ def process_sentence(sentence: str, doc_created_indexes=None):
         pred_dict = next((p for p in get_predicate_structure() if p["index"] == idx), None)
         if pred_dict is not None:
             text = convert_predicate_to_text(pred_dict).strip()
+            print(text)
         else:
             text = main_pred_text
         

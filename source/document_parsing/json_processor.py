@@ -27,7 +27,8 @@ from time_evolution_extraction import calculate_event_evolution_relationship
 # 항목 캐시: 현재 항목에 속한 노드 정보를 임시로 저장
 _current_item_cache = {
     "item_name": None,  # 레벨=1 항목명
-    "nodes": []         # [{ "index": 10, "type": "predicate" }, ...]
+    "nodes": [],         # [{ "index": 10, "type": "predicate" }, ...]
+    "original_sentences" : ""
 }
 
 def finalize_current_item(doc_created_edge_indexes=None):
@@ -50,12 +51,15 @@ def finalize_current_item(doc_created_edge_indexes=None):
     item_entity_nodes = [ e for e in all_entities   if e["index"] in item_entity_indexes ]
     item_predicate_nodes = [ p for p in all_predicates if p["index"] in item_predicate_indexes ]
 
+    original_sentences = _current_item_cache["original_sentences"]
+
     # 2) time_evolution_extraction 모듈에 넘겨서 관계 생성
-    calculate_event_evolution_relationship(item_entity_nodes, item_predicate_nodes,doc_created_edge_indexes)
+    calculate_event_evolution_relationship(item_entity_nodes, item_predicate_nodes, original_sentences, doc_created_edge_indexes)
 
     # 3) 캐시 비우기
     _current_item_cache["item_name"] = None
     _current_item_cache["nodes"].clear()
+    _current_item_cache["original_sentences"] = ""
 
 def start_new_item(item_name: str,doc_created_edge_indexes=None):
     """
@@ -76,6 +80,9 @@ def add_node_to_current_item(node_index: int, node_type: str):
         "index": node_index,
         "type": node_type
     })
+
+def add_original_sentence_to_current_item(sentence:str):
+    _current_item_cache["original_sentences"] = _current_item_cache["original_sentences"]+sentence
 
 def process_item(key, value, parent_category_index=None, hierarchical_level=0, doc_created_indexes=None):
     """
@@ -128,6 +135,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
                 # 1) heading prefix만 엔티티
                 log_to_file(f"[entity(only heading prefix)] {heading_prefix}")
                 h_idx = append_entity_info(heading_prefix, doc_created_indexes)
+                add_original_sentence_to_current_item(value)
                 add_node_to_current_item(h_idx, "entity") 
                 if current_category_index:
                     append_edge_info("sub", current_category_index, h_idx, doc_created_indexes)
@@ -140,6 +148,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
                         if not s:
                             continue
                         # 문장 해석
+                        add_original_sentence_to_current_item(s)
                         created_nodes = process_sentence(s + "。",doc_created_indexes)
                         if current_category_index and created_nodes:
                             for cn in created_nodes:
@@ -151,6 +160,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
                         e_val = heading_prefix + rest
                         log_to_file(f"[entity(with heading)] {e_val}")
                         e_idx = append_entity_info(e_val, doc_created_indexes)
+                        add_original_sentence_to_current_item(e_val)
                         add_node_to_current_item(e_idx, "entity")
                         if current_category_index:
                             append_edge_info("sub", current_category_index, e_idx, doc_created_indexes)
@@ -164,6 +174,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
                 s = s.strip()
                 if not s:
                     continue
+                add_original_sentence_to_current_item(s)
                 created_nodes = process_sentence(s + "。",doc_created_indexes)
                 if current_category_index and created_nodes:
                     for cn in created_nodes:
@@ -173,6 +184,7 @@ def process_item(key, value, parent_category_index=None, hierarchical_level=0, d
             # (C) 마침표 없음 => 엔티티
             log_to_file(f"[entity] {value}")
             e_idx = append_entity_info(value, doc_created_indexes)
+            add_original_sentence_to_current_item(value)
             add_node_to_current_item(e_idx, "entity")
             if current_category_index:
                 append_edge_info("sub", current_category_index, e_idx, doc_created_indexes)
