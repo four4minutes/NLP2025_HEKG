@@ -20,7 +20,7 @@ CASE_MARKERS = {
 }
 
 # 불용어 정의
-STOP_WORDS = {"が", "で", "した", "に", "する", "を", "から", "の", "へ"}
+STOP_WORDS = {"が", "で", "した", "に", "する", "を", "から", "の", "へ", "て", "と", "など", "による", "、"}
 
 def normalize_text(text: str) -> str:
     text = text.strip()

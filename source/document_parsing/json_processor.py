@@ -41,20 +41,21 @@ def finalize_current_item(doc_created_edge_indexes=None):
     if not _current_item_cache["item_name"]:
         return
 
-    # 캐시에서 entity/predicate의 인덱스만 추출
-    item_entity_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "entity" ]
-    item_predicate_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "predicate" ]
+    if len(_current_item_cache["nodes"]) >= 2:
+        # 캐시에서 entity/predicate의 인덱스만 추출
+        item_entity_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "entity" ]
+        item_predicate_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "predicate" ]
 
-    # 실제 node 객체로 필터링
-    all_entities   = get_entity_structure()
-    all_predicates = get_predicate_structure()
-    item_entity_nodes = [ e for e in all_entities   if e["index"] in item_entity_indexes ]
-    item_predicate_nodes = [ p for p in all_predicates if p["index"] in item_predicate_indexes ]
+        # 실제 node 객체로 필터링
+        all_entities   = get_entity_structure()
+        all_predicates = get_predicate_structure()
+        item_entity_nodes = [ e for e in all_entities   if e["index"] in item_entity_indexes ]
+        item_predicate_nodes = [ p for p in all_predicates if p["index"] in item_predicate_indexes ]
 
-    original_sentences = _current_item_cache["original_sentences"]
+        original_sentences = _current_item_cache["original_sentences"]
 
-    # 2) time_evolution_extraction 모듈에 넘겨서 관계 생성
-    calculate_event_evolution_relationship(item_entity_nodes, item_predicate_nodes, original_sentences, doc_created_edge_indexes)
+        # 2) time_evolution_extraction 모듈에 넘겨서 관계 생성
+        calculate_event_evolution_relationship(item_entity_nodes, item_predicate_nodes, original_sentences, doc_created_edge_indexes)
 
     # 3) 캐시 비우기
     _current_item_cache["item_name"] = None
