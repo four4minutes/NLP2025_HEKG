@@ -31,6 +31,14 @@ _current_item_cache = {
     "original_sentences" : ""
 }
 
+EXCLUDE_RELATION_TARGETS = {
+    "explain_reason",
+    "info_SpecificTime",
+    "info_SpecificPlace",
+    "explain_details",
+    "correspond_to"
+}
+
 def finalize_current_item(doc_created_edge_indexes=None):
     """
     항목(레벨=1) 캐시에 모인 노드들에 대해,
@@ -42,9 +50,18 @@ def finalize_current_item(doc_created_edge_indexes=None):
         return
 
     if len(_current_item_cache["nodes"]) >= 2:
+        #제외조건에 해당하는 노드
+        excluded_nodes = set()
+        all_edges = get_edge()
+        for e in all_edges:
+            if e["type"] in EXCLUDE_RELATION_TARGETS:
+                excluded_nodes.add(e["to"])
+
         # 캐시에서 entity/predicate의 인덱스만 추출
         item_entity_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "entity" ]
+        item_entity_indexes = [ idx for idx in item_entity_indexes if idx not in excluded_nodes]
         item_predicate_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "predicate" ]
+        item_predicate_indexes = [ idx for idx in item_predicate_indexes if idx not in excluded_nodes]
 
         # 실제 node 객체로 필터링
         all_entities   = get_entity_structure()
