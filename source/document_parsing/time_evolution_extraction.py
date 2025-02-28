@@ -12,7 +12,9 @@ from source.document_parsing.text_utils import (
 
 client = OpenAI()
 
-def tokenize_sentence(lines_for_tokenize):
+TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING = 0.60
+
+def tokenize_sentence(lines_for_tokenize, node_type_dict):
     """
     1) lines_for_tokenize: ["(3) エスカレーターが逆走した", ...] 형태
     2) OpenAI API를 사용하여, 단어 토큰화 + 동사 기본형 변환
@@ -140,6 +142,9 @@ def tokenize_sentence(lines_for_tokenize):
             vocab_dict[tk] = vocab_dict.get(tk, 0) + 1
             filtered.append(tk)
 
+        if node_type_dict.get(node_idx) == "predicate" and filtered:
+            filtered.pop()  # 마지막 토큰 제거
+
         result.append((node_idx, filtered))
 
     return result, vocab_dict
@@ -234,8 +239,19 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
             sim_val = cos_sim(node_term_vector[a], node_term_vector[b])
             cos_sim_dict[(a, b)] = sim_val
 
-    return node_term_vector, cos_sim_dict, sorted_vocab
+    return node_term_vector, cos_sim_dict, sorted_vocab, node_indices
 
+def calculate_node_distributional_proximity(node_a_idx, node_b_idx, N, beta=0.5):
+    """
+    node_a_idx < node_b_idx 라고 가정.
+    m = node_b_idx - node_a_idx
+    distributional_proximity = e^((-1)*beta*(m/N))
+    """
+    m = node_b_idx - node_a_idx
+    if m < 0:
+        m = -m  # 혹시나 a_idx > b_idx인 경우를 방어적으로 처리
+    dp = math.exp(-beta * (m / N))
+    return dp
 
 def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, original_sentences, doc_created_edge_indexes):
     """
@@ -252,16 +268,24 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
 
     # (B) 노드 텍스트 모으기
     lines_for_tokenize = []
+    node_text_dict = {}
+    node_type_dict = {}
+
     for ent_node in entity_nodes:
         text_ent = ent_node.get("entity", "").strip()
         if text_ent:
             node_idx = ent_node["index"]
             lines_for_tokenize.append(f"({node_idx}) {text_ent}")
+            node_text_dict[node_idx] = text_ent
+            node_type_dict[node_idx] = "entity"
+
     for pred_node in sorted_predicates:
         pred_text = convert_predicate_to_text(pred_node).strip()
         if pred_text:
             node_idx = pred_node["index"]
             lines_for_tokenize.append(f"({node_idx}) {pred_text}")
+            node_text_dict[node_idx] = pred_text
+            node_type_dict[node_idx] = "predicate"
 
     # 노드가 없다면 종료
     if not lines_for_tokenize:
@@ -270,13 +294,32 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
         return
 
     # (C) 토크나이즈 함수 호출
-    result, vocab_dict = tokenize_sentence(lines_for_tokenize)
+    result, vocab_dict = tokenize_sentence(lines_for_tokenize, node_type_dict)
     if not result:
         log_to_file("[INFO] tokenization failed or empty result.")
         return
 
     # (D) node_vector_space_model 호출 (TF or TF-IDF 결정 가능)
-    ONLY_TF_TERM_WEIGHT = False  # 혹은 True
-    node_term_vector, cos_sim_dict, sorted_vocab = node_vector_space_model(result, vocab_dict, only_tf=ONLY_TF_TERM_WEIGHT)
+    ONLY_TF_TERM_WEIGHT = True 
+    node_term_vector, cos_sim_dict, sorted_vocab, node_indices = node_vector_space_model(result, vocab_dict, only_tf=ONLY_TF_TERM_WEIGHT)
+
+    for (a, b), sim in sorted(cos_sim_dict.items()):
+        if sim > 0:
+            # distributional_proximity 계산 (N은 node_indices 길이)
+            distributional_prox = calculate_node_distributional_proximity(a, b, N= len(node_indices), beta=0.5)
+            time_evolution_score = sim * distributional_prox
+
+            if time_evolution_score >= TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING:
+                # from_idx, to_idx = a, b (a<b 가정)
+                append_edge_info("next_TimeStamp", a, b, doc_created_edge_indexes)
+
+            # 로깅: 예시
+            textA = node_text_dict.get(a, "N/A")
+            textB = node_text_dict.get(b, "N/A")
+            log_to_file(
+                f"  Node#{a}({textA}) -> Node#{b}({textB}) | "
+                f"cos_sim={sim:.3f}, distr_prox={distributional_prox:.3f}, "
+                f"time_evolution_score={time_evolution_score:.3f}"
+            )
 
     log_to_file("----------------------------")
