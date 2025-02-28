@@ -239,7 +239,128 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
             sim_val = cos_sim(node_term_vector[a], node_term_vector[b])
             cos_sim_dict[(a, b)] = sim_val
 
-    return node_term_vector, cos_sim_dict, sorted_vocab, node_indices
+    return cos_sim_dict, sorted_nodes
+
+def build_timestamp_info(item_nodes, item_edges):
+    """
+    1) info_SpecificTime 엣지로부터 timestamp 노드 찾기 (edge["from"]가 timestamp)
+    2) item_node_indices를 이용하여 각 노드별 대표 timestamp 노드를 찾는다.
+    3) timestamp 노드들을 정렬하여 rank를 부여.
+    4) group_map[node_idx] = {
+         "rep_node": 대표 timestamp 노드 인덱스 (또는 None),
+         "rank": 대표 timestamp 노드의 rank (int),
+         "group_size": 그 timestamp 그룹의 노드 수,
+         "timestamp_count": 전체 timestamp 노드의 개수
+       }
+    => 이 구조만 넘겨주면, calculate_node_temporal_proximity에서 node a, b 각각을 보고
+       d 계산에 필요한 모든 정보를 얻을 수 있음.
+    """
+
+    # (A) info_SpecificTime 관계의 출발점 -> timestamp 노드
+    timestamp_nodes = set()
+    for e in item_edges:
+        if e["type"] == "info_SpecificTime" and e["from"] in item_nodes:
+            timestamp_nodes.add(e["from"])
+
+    # (B) timestamp_count
+    timestamp_count = len(timestamp_nodes)
+
+    # (C) timestamp 노드를 정렬, rank 부여
+    sorted_timestamps = sorted(timestamp_nodes)
+    timestamp_rank = {}
+    for i, tnode in enumerate(sorted_timestamps):
+        timestamp_rank[tnode] = i  # rank 0,1,2,...
+
+    # (D) 각 노드별 대표 timestamp 찾기
+    #     (인덱스가 작거나 같은 timestamp 노드 중 최댓값)
+    rep_node = {}
+    for idx in item_nodes:
+        if idx in timestamp_nodes:
+            rep_node[idx] = idx
+        else:
+            candidate = None
+            for tnode in sorted_timestamps:
+                if tnode <= idx:
+                    candidate = tnode
+                else:
+                    break
+            rep_node[idx] = candidate  # 없으면 None
+
+    # (E) 같은 rep_node를 공유하는 노드끼리 그룹 -> group_map[rep_node_idx] = [node1,node2,...]
+    from collections import defaultdict
+    big_group_map = defaultdict(list)
+    for idx in item_nodes:
+        r = rep_node[idx]
+        if r is not None:
+            big_group_map[r].append(idx)
+
+    # (F) group_map[node] = { "rep_node":..., "rank":..., "group_size":..., "timestamp_count":... }
+    group_map = {}
+    for idx in item_nodes:
+        r = rep_node[idx]
+        # rank: r이 None이면 0
+        node_rank = timestamp_rank.get(r, 0) if r else 0
+        # group_size: r가 있으면 big_group_map[r]의 길이, 없으면 0
+        grp_size = len(big_group_map[r]) if r else 0
+
+        group_map[idx] = {
+            "rep_node": r,                 # None or idx of timestamp
+            "rank": node_rank,             # int
+            "group_size": grp_size,        # int
+            "timestamp_count": timestamp_count
+        }
+
+    return group_map
+
+def calculate_node_temporal_proximity(a_idx, b_idx, group_map, alpha=0.5):
+    """
+    group_map: build_timestamp_info(...)가 반환한 사전
+      group_map[node_idx] = {
+         "rep_node": ...,
+         "rank": ...,
+         "group_size": ...,
+         "timestamp_count": ...
+      }
+    => 이를 통해 time_evolution_score 계산에 필요한 정보를 얻는다.
+
+    규칙:
+      1) timestamp_count = 0 -> return 1.0
+      2) 같음timestamp => group_size>10 -> d= (1000/(group_size-1))*(b-a), else d=100*(b-a)
+      3) 다른timestamp => d=100*(b-a)+1000*(|rankA-rankB|)
+      4) T= timestamp_count*1000
+      => exp(-alpha*(d/T))
+    """
+    # (A) timestamp_count
+    timestamp_count = group_map[a_idx]["timestamp_count"]  # a,b 동일한 timestamp_count
+    if timestamp_count == 0:
+        return 1.0
+    T = timestamp_count * 1000
+
+    # (B) rep_node + rank + group_size
+    a_rep = group_map[a_idx]["rep_node"]
+    b_rep = group_map[b_idx]["rep_node"]
+    a_rank = group_map[a_idx]["rank"]
+    b_rank = group_map[b_idx]["rank"]
+    group_size = group_map[a_idx]["group_size"]
+
+    # (C) 인덱스 차
+    m = b_idx - a_idx  # a_idx<b_idx라고 가정
+    # 만약 a_idx>b_idx 가능성이 있으면 if m<0: m=-m
+
+    # (D) d 계산
+    if a_rep is not None and b_rep is not None and a_rep == b_rep:
+        # 같은 timestamp
+        if group_size > 10:
+            d = (1000.0 / (group_size - 1)) * m
+        else:
+            d = 100*m
+    else:
+        # 다른 timestamp
+        rank_diff = abs(b_rank - a_rank)
+        d = 100*m + 1000*rank_diff
+
+    # (E) 최종
+    return math.exp(-alpha*(d / T))
 
 def calculate_node_distributional_proximity(node_a_idx, node_b_idx, N, beta=0.5):
     """
@@ -270,7 +391,9 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
     lines_for_tokenize = []
     node_text_dict = {}
     node_type_dict = {}
+    agent_arg_dict = {}
 
+    """
     for ent_node in entity_nodes:
         text_ent = ent_node.get("entity", "").strip()
         if text_ent:
@@ -278,6 +401,7 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
             lines_for_tokenize.append(f"({node_idx}) {text_ent}")
             node_text_dict[node_idx] = text_ent
             node_type_dict[node_idx] = "entity"
+    """
 
     for pred_node in sorted_predicates:
         pred_text = convert_predicate_to_text(pred_node).strip()
@@ -286,6 +410,12 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
             lines_for_tokenize.append(f"({node_idx}) {pred_text}")
             node_text_dict[node_idx] = pred_text
             node_type_dict[node_idx] = "predicate"
+        agent_arg = pred_node.get("agent_argument", "")
+        match = re.match(r'^(.*)\(ガ格\)$', agent_arg.strip())
+        if match:
+            agent_arg_dict[node_idx] = match.group(1).strip()
+        else:
+            agent_arg_dict[node_idx] = agent_arg.strip()
 
     # 노드가 없다면 종료
     if not lines_for_tokenize:
@@ -301,24 +431,40 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
 
     # (D) node_vector_space_model 호출 (TF or TF-IDF 결정 가능)
     ONLY_TF_TERM_WEIGHT = True 
-    node_term_vector, cos_sim_dict, sorted_vocab, node_indices = node_vector_space_model(result, vocab_dict, only_tf=ONLY_TF_TERM_WEIGHT)
+    cos_sim_dict, sorted_nodes = node_vector_space_model(result, vocab_dict, only_tf=ONLY_TF_TERM_WEIGHT)
 
-    for (a, b), sim in sorted(cos_sim_dict.items()):
-        if sim > 0:
-            # distributional_proximity 계산 (N은 node_indices 길이)
-            distributional_prox = calculate_node_distributional_proximity(a, b, N= len(node_indices), beta=0.5)
-            time_evolution_score = sim * distributional_prox
+    # (F) 현재 item에 속한 edge 필터링
+    from source.document_parsing.edge_maker import get_edge
+    all_edges = get_edge()
+    item_edges = [e for e in all_edges if (e["from"] in sorted_nodes or e["to"] in sorted_nodes)]
+    group_map = build_timestamp_info(sorted_nodes, item_edges)
 
-            if time_evolution_score >= TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING:
-                # from_idx, to_idx = a, b (a<b 가정)
-                append_edge_info("next_TimeStamp", a, b, doc_created_edge_indexes)
+    for (a_idx,b_idx),cos_sim_val in sorted(cos_sim_dict.items()):
 
-            # 로깅: 예시
-            textA = node_text_dict.get(a, "N/A")
-            textB = node_text_dict.get(b, "N/A")
+        time_evolution_score = 0
+
+        # 인덱스 값의 차이가 1이라면 score에 보너스 0.3
+        if (b_idx-a_idx==1):
+            time_evolution_score += 0.3
+            # 주어가 같다면 보너스 0.3
+            if (agent_arg_dict.get(a_idx, "") != "" and agent_arg_dict[a_idx] == agent_arg_dict.get(b_idx, "")):
+                time_evolution_score += 0.3
+
+        # distributional_proximity 계산 (N은 node_indices 길이)
+        temporal_prox = calculate_node_temporal_proximity(a_idx, b_idx, group_map, alpha=0.5)
+        distributional_prox = calculate_node_distributional_proximity(a_idx, b_idx, N= len(sorted_nodes), beta=0.5)
+        time_evolution_score += cos_sim_val * temporal_prox * distributional_prox
+
+
+        if time_evolution_score >= TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING:
+            append_edge_info("next_TimeStamp", a_idx, b_idx, doc_created_edge_indexes)
+
+        if time_evolution_score > 0:
+            textA = node_text_dict.get(a_idx, "N/A")
+            textB = node_text_dict.get(b_idx, "N/A")
             log_to_file(
-                f"  Node#{a}({textA}) -> Node#{b}({textB}) | "
-                f"cos_sim={sim:.3f}, distr_prox={distributional_prox:.3f}, "
+                f"  Node#{a_idx}({textA}) -> Node#{b_idx}({textB}) | "
+                f"cos_sim={cos_sim_val:.3f}, temp_prox={temporal_prox:.3f}, distr_prox={distributional_prox:.3f}, "
                 f"time_evolution_score={time_evolution_score:.3f}"
             )
 
