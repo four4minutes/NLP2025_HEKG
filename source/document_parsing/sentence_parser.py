@@ -10,7 +10,8 @@ from source.document_parsing.predicate_extraction import (
     extract_entity_and_predicate_structures
 )
 from source.document_parsing.text_utils import process_sentence_with_residue_removal, convert_predicate_to_text
-from causal_relationship_extraction import extract_causal_relationship
+from source.document_parsing.causal_relationship_extraction import extract_causal_relationship
+from source.document_parsing.detailed_info_relationship_extraction import extract_explain_details_relationship
 
 def process_sentence(sentence: str, doc_created_indexes=None):
     # 1) 문장 로깅
@@ -100,7 +101,6 @@ def process_sentence(sentence: str, doc_created_indexes=None):
         pred_dict = next((p for p in get_predicate_structure() if p["index"] == idx), None)
         if pred_dict is not None:
             text = convert_predicate_to_text(pred_dict).strip()
-            print(text)
         else:
             text = main_pred_text
         
@@ -163,13 +163,14 @@ def process_sentence(sentence: str, doc_created_indexes=None):
                 edge_type = "info_SpecificTime" if c["type"] == "time" else "info_SpecificPlace"
                 append_edge_info(edge_type, from_node_index=chosen_idx, to_node_index=c["index"], doc_created_edge_indexes=doc_created_indexes)
 
-    # 10) 문장 + 노드 정보를 이용해 인과관계 추출
-    causal_node_list = []
+    # 10) 문장 + 노드 정보를 이용해 리스트 작성 
+    target_node_list = []
     for n in created_nodes_in_sentence:
         if n["type"] in ("predicate", "entity"):
-            causal_node_list.append({"index": n["index"], "text": n["text"]})   
+            target_node_list.append({"index": n["index"], "text": n["text"]})   
 
-    extract_causal_relationship(sentence, causal_node_list, doc_created_indexes)
+    extract_causal_relationship(sentence, target_node_list, doc_created_indexes) #인과관계 추출
+    extract_explain_details_relationship(sentence, target_node_list, doc_created_indexes) #설명관계 추출출
 
     # 11) 최종적으로 생성된 노드들의 인덱스 리스트를 반환
     all_created_indexes = [d["index"] for d in created_nodes_in_sentence]

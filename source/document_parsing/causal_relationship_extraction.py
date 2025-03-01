@@ -2,7 +2,7 @@
 
 import re
 from openai import OpenAI
-from source.document_parsing.logger import log_token_usage, log_to_file
+from source.document_parsing.logger import log_token_usage
 from source.document_parsing.edge_maker import append_edge_info
 
 client = OpenAI()
