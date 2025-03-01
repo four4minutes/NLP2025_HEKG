@@ -1,3 +1,6 @@
+# pedicate_extraction.py
+# 文から述語と述語項構造を抽出するモジュール
+
 import re
 from openai import OpenAI
 from source.document_parsing.logger import log_token_usage
@@ -6,25 +9,28 @@ from source.document_parsing.text_utils import fix_predicate_structure_text
 client = OpenAI()
 
 def split_into_sentences(text: str) -> str:
-    """
-    문장을 단문으로 나누고 번호를 부여한 후 합친 텍스트를 반환.
-    """
-    # 간단한 문장 분리 (句点, 쉼표, 세미콜론 등 기준)
+    '''
+    文を簡易的に区切り、ナンバリングして複数行にまとめて返す関数。
+    句点やセミコロンなどを区切りとする。
+    - text : 入力文
+    '''
+    # (1) 正規表現で分割
     sentences = re.split(r'[。！？.;,、]', text)
-    # 유효한 문장만 필터링
+    # (2) 無意味な空白を除去し、番号を付与して連結
     valid_sentences = [sentence.strip() for sentence in sentences if sentence.strip()]
-    # 번호를 붙여서 단문을 합침
     numbered_sentences = "\n".join(f"({i+1}) {sentence}" for i, sentence in enumerate(valid_sentences))
     return numbered_sentences
 
 def extract_predicates(sentence: str) -> tuple:
-    """
-    문장에서 술어를 추출하는 함수.
-    """
-    # 문장을 단문으로 나눔
+    '''
+    1つの文から事象述語と概念述語を抽出して返す関数。
+    - sentence : 抽出対象となる文
+    - return: (事象述語のリスト, 概念述語のリスト)
+    '''
+    # (1) 文を分割して前処理
     preprocessed_sentences = split_into_sentences(sentence)
 
-    # 수정된 프롬프트
+    # (2) GPTに与えるプロンプト
     prompt = (
         "[タスク目的]\n\n"
         "入力文からすべての述語を特定し、その後、事象に関する記述をする述語と概念に関する記述をする述語を区別する。\n\n"
@@ -75,8 +81,6 @@ def extract_predicates(sentence: str) -> tuple:
         "3. 順序を維持しつつ重複を避ける。\n"
         "4. 結果を指定の形式で出力する。\n"
     )
-
-    # 수정된 examples
     examples = [
         {
             "input": {
@@ -248,7 +252,7 @@ def extract_predicates(sentence: str) -> tuple:
         }
     ]
 
-    # 요청 생성
+    # (3) APIを呼び出す
     response = client.chat.completions.create(
         model="gpt-4o",
         messages = [
@@ -273,6 +277,7 @@ def extract_predicates(sentence: str) -> tuple:
     event_predicates = []
     entity_predicates = []
 
+    # (4) 正規表現で抽出
     event_match = re.search(r"\[事象述語\](.*?)\[", content, re.DOTALL)
     if event_match:
         event_predicates = [pred.strip() for pred in re.findall(r"<(.*?)>", event_match.group(1))]
@@ -284,18 +289,23 @@ def extract_predicates(sentence: str) -> tuple:
     return event_predicates, entity_predicates
 
 def extract_entity_and_predicate_structures(sentence: str, event_predicates: list, entity_predicates: list, time_list: list, place_list: list) -> tuple:
-    """
-    문장과 추출된 사상 술어(event predicates) 및 개념 술어(entity predicates)를 기반으로
-    모든 述語項構造와 엔ティティ 리스트를 생성.
-    """
+    '''
+    事象述語・概念述語を基に、述語項構造と追加エンティティを抽出する関数。
+    - sentence : 処理対象の原文
+    - event_predicates : 事象述語のリスト
+    - entity_predicates : 概念述語のリスト
+    - time_list : 時間表現のリスト
+    - place_list : 場所表現のリスト
+    - return : (述語項構造リスト, エンティティリスト)
+    '''
     predicate_argument_structures = []
     entities = []
 
     try:
-        # time_list, place_list를 문자열로 변환
+        # (1) 時間や場所情報を文字列化
         time_str = ", ".join(time_list) if time_list else ""
         place_str = ", ".join(place_list) if place_list else ""
-
+        # (2) GPTに与えるプロンプト
         prompt = (
             "[タスク目的]\n\n"
             "入力文に対して、事象に関する述語を基に述語項構造を抽出し、概念に関する述語を基にエンティティ(名詞句化された概念)を抽出する。本タスクの最終目的は、文書全体をグラフ構造で表現する際のノードとなる情報を得ることである。\n\n"
@@ -401,7 +411,6 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
             "3. 時間表現・場所表現は無視する(既知情報として扱い、ここで新たにエンティティ化しない)。\n"
             "4. 抽出結果を指定形式で出力する。\n"
         )
-
         examples = [
             {
                 "input": {
@@ -472,8 +481,8 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
                     "sentence": "また、エスカレーターの逆走により、極めて高い密度で皆後ろ向きで乗り口付近で折り重なるように倒れたことから、「群集雪崩」が発生したとも考えられる。",
                     "event_predicates": ["逆走", "折り重なる", "倒れた", "発生した"],
                     "entity_predicates": ["考えられる"],
-                    "time": [],  # extract_time_and_place에 시간 없음
-                    "place": ["乗り口付近"]  # extract_time_and_place 결과 참조 (#3번째 time/place 예제)
+                    "time": [], 
+                    "place": ["乗り口付近"]  
                 },
                 "output": "[述語項構造]\n"
                         "(1) 逆走(述語), エスカレーター(ガ格)\n"
@@ -760,12 +769,10 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
                         "(3) 適正な管理の確保"
             }
         ]
-
         messages = [
             {"role": "system", "content": "You are an assistant that extracts predicate-argument structures and entities from sentences."},
             {"role": "user", "content": prompt}
         ]
-
         for example in examples:
             example_input_str = (
                 f"文:{example['input']['sentence']}\n"
@@ -777,7 +784,6 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
             example_output_str = example['output']
             messages.append({"role": "user", "content": example_input_str})
             messages.append({"role": "assistant", "content": example_output_str})
-
         final_input = (
             f"文: {sentence}\n"
             f"事象述語: {', '.join(event_predicates)}\n"
@@ -785,9 +791,9 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
             f"時間表現: {time_str}\n"
             f"場所表現: {place_str}\n\n"
         )
-
         messages.append({"role": "user", "content": final_input})
 
+        # (3) 実際にAPIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -797,6 +803,7 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
         content = response.choices[0].message.content.strip()
         log_token_usage(response.usage.total_tokens)
 
+        # (4) 結果から述語項構造部分とエンティティ部分を抽出
         predicate_argument_section = re.search(r"\[述語項構造\](.*?)\[エンティティ\]", content, re.DOTALL)
         if predicate_argument_section:
             predicate_argument_lines = predicate_argument_section.group(1).strip().split("\n")

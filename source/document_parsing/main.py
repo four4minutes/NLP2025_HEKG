@@ -12,21 +12,32 @@ from source.document_parsing.edge_maker import get_edge
 from json_processor import process_json
 from csv_exporter import export_to_csv
 
-# 1) 로그 초기화
-initialize_logger()
+def main():
+    '''
+    メインエントリーポイントとなる関数。JSONファイルを読み込み、
+    全体の処理を実行して最終的にCSVファイルへ結果を出力する。
+    - JSONファイル名を指定し、読み込んだ後はprocess_jsonに渡す。
+    - ノードやエッジの最終結果をCSVとして保存する。
+    '''
+    # (1) ロガー初期化
+    initialize_logger()
 
-# 2) JSON 데이터 로드
-input_filename = "test.json"
-filename_only = os.path.splitext(input_filename)[0]
-with open(input_filename, 'r', encoding='utf-8') as file:
-    data = json.load(file)
+    # (2) JSONデータのロード
+    input_filename = "test.json"
+    filename_only = os.path.splitext(input_filename)[0]
+    with open(input_filename, 'r', encoding='utf-8') as file:
+        data = json.load(file)
 
-# 3) JSON 전체 처리
-process_json(data, filename_only)
+    # (3) JSON全体の処理
+    process_json(data, filename_only)
 
-# 4) 처리 완료 후, 최종적으로 CSV로 내보내기
-category_list = get_category_structure()
-entity_list = get_entity_structure()
-predicate_list = get_predicate_structure()
-edge_list = get_edge()
-export_to_csv(category_list, entity_list, predicate_list, edge_list, "results")
+    # (4) 処理結果をCSV形式で出力
+    category_list = get_category_structure()
+    entity_list = get_entity_structure()
+    predicate_list = get_predicate_structure()
+    edge_list = get_edge()
+
+    export_to_csv(category_list, entity_list, predicate_list, edge_list, "results")
+
+if __name__ == "__main__":
+    main()
