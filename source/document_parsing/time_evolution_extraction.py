@@ -1,28 +1,41 @@
 # time_evolution_extraction.py
+# ノード間の時系列的な繋がりを推定し、next_TimeStampエッジを生成するモジュール
+
 import re
 import math
 from collections import defaultdict, Counter
 from openai import OpenAI
 from source.document_parsing.logger import log_to_file
 from source.document_parsing.edge_maker import append_edge_info
-from source.document_parsing.text_utils import (
-    convert_predicate_to_text,
-    STOP_WORDS
-)
+from source.document_parsing.text_utils import convert_predicate_to_text, STOP_WORDS
 
 client = OpenAI()
 
 TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING = 0.60
 
 def tokenize_sentence(lines_for_tokenize, node_type_dict):
-    """
-    1) lines_for_tokenize: ["(3) エスカレーターが逆走した", ...] 형태
-    2) OpenAI API를 사용하여, 단어 토큰화 + 동사 기본형 변환
-    3) 리턴: [(node_idx, [token1, token2, ...]), ...],  그리고 vocab_dict
-    (프롬프트와 예제는 기존 로직 유지)
-    """
+    '''
+    与えられたテキスト行それぞれに対してトークナイズと動詞の基本形変換を行う関数。
+    - lines_for_tokenize : "(index) text" 形式の複数行
+    - node_type_dict : ノード種別を追跡する辞書 {index: "predicate"/"entity"...}
+    - return : (result, vocab_dict)
+       result : [(node_idx, [tokens...]), ...]
+       vocab_dict : 全トークンの登場回数などを管理する辞書
+    '''
 
-    # (A) 예시(단일) 준비
+    # (1) GPTに与えるプロンプト
+    system_prompt = (
+        "[指示]\n"
+        "あなたは日本語の入力文を単語トークンに分割し、動詞の活用形を基本形に変換して返すアシスタントです。\n"
+        "出力時には、(n) を行頭に付与したうえで、トークンを ' | ' で区切ってください。\n"
+        "動詞が過去形・連用形の場合はできるだけ基本形に直してください。\n"
+        "[入力形式] : 先頭の()にインデックス番号、その後にテキスト文\n"
+        "(index) テキスト文\n"
+        "(index) テキスト文\n"
+        "[出力形式] : 先頭の()にインデックス番号(入力と同様に)、その後に処理結果\n"
+        "(index) トークン | トークン | トークン\n"
+        "(index) トークン | トークン | トークン\n"
+    )
     example = {
         "input": (
             "(1) 定員以上の乗客が乗り込んだ",
@@ -63,42 +76,19 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
             "(17) 群集雪崩 | が | 発生 | する"
         )
     }
-
-    system_prompt = (
-        "[指示]\n"
-        "あなたは日本語の入力文を単語トークンに分割し、動詞の活用形を基本形に変換して返すアシスタントです。\n"
-        "出力時には、(n) を行頭に付与したうえで、トークンを ' | ' で区切ってください。\n"
-        "動詞が過去形・連用形の場合はできるだけ基本形に直してください。\n"
-        "[入力形式] : 先頭の()にインデックス番号、その後にテキスト文\n"
-        "(index) テキスト文\n"
-        "(index) テキスト文\n"
-        "[出力形式] : 先頭の()にインデックス番号(入力と同様に)、その後に処理結果\n"
-        "(index) トークン | トークン | トークン\n"
-        "(index) トークン | トークン | トークン\n"
-    )
-
     messages = []
-    # 1) system
     messages.append({"role": "system", "content": system_prompt})
-    # 2) user - 예제의 input
-    ex_input_text = (
-        "以下は処理の例文です。\n\n"
-        f"input:{example['input']}\n"
-    )
+    
+    ex_input_text = ("以下は処理の例文です。\n\n"f"input:{example['input']}\n")
     messages.append({"role": "user", "content": ex_input_text})
-    # 3) assistant - 예제의 output
+    
     ex_output_text = example["output"]
     messages.append({"role": "assistant", "content": ex_output_text})
 
-    # (B) 실제 유저 요청 (토큰화할 노드들)
-    user_prompt = (
-        "上記の例を参考に、以下の各行をトークンに分割し、"
-        "動詞は基本形に変換して出力してください。\n\n"
-        + "\n".join(lines_for_tokenize)
-    )
+    user_prompt = ("上記の例を参考に、以下の各行をトークンに分割し、""動詞は基本形に変換して出力してください。\n\n"+"\n".join(lines_for_tokenize))
     messages.append({"role": "user", "content": user_prompt})
 
-    # (C) API 호출
+    # (2) 実際にAPIを呼び出す
     client_api = client.chat.completions
     try:
         response = client_api.create(
@@ -112,10 +102,10 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
         log_to_file("----------------------------")
         return [], {}
 
-    # (D) 결과 파싱
+    # (3) 結果からトークンを抽出
     output_lines = content.split("\n")
-    result = []     # [(node_idx, [tokens...])]
-    vocab_dict = {} # { token : 전역 등장 횟수 }
+    result = [] 
+    vocab_dict = {} 
 
     index_pattern = re.compile(r'^\(\s*(\d+)\s*\)\s*(.*)$')
 
@@ -134,7 +124,6 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
 
         tokens_in_line = [t.strip() for t in tokens_str.split("|") if t.strip()]
 
-        # stop words 제외, vocab_dict 갱신
         filtered = []
         for tk in tokens_in_line:
             if tk in STOP_WORDS:
@@ -143,7 +132,7 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
             filtered.append(tk)
 
         if node_type_dict.get(node_idx) == "predicate" and filtered:
-            filtered.pop()  # 마지막 토큰 제거
+            filtered.pop()  #最後のトークンを落とす
 
         result.append((node_idx, filtered))
 
@@ -151,16 +140,13 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
 
 
 def node_vector_space_model(result, vocab_dict, only_tf=False):
-    """
-    1) result: [(node_idx, [token1, token2, ...]), ...]
-    2) vocab_dict: { token: 전역 등장 횟수 }
-    3) only_tf=False => TF-IDF, only_tf=True => TF만
-    
-    리턴:
-      - node_term_vector: { node_idx: [w_i1, w_i2, ..., w_ik] }
-      - cos_sim_dict: { (a,b): cos_sim_val }
-      - sorted_vocab: vocab 정렬 리스트 (필요시)
-    """
+    '''
+    ノードごとにTFまたはTF-IDFベクトルを構築し、ノード間のコサイン類似度を計算する。
+    - result: [(node_idx, [tokens...])]
+    - vocab_dict: { token: 全体の出現数 }
+    - only_tf: Trueの場合はTFのみ、FalseならTF-IDF
+    - return: (cos_sim_dict, sorted_nodes)
+    '''
     node_token_freq = defaultdict(Counter)
     node_indices = []
     for (nidx, tokens) in result:
@@ -172,13 +158,13 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
     node_indices = list(set(node_indices))
     N = len(node_indices)
 
-    # (A) node별 max freq
+    # (1) nodeごとのnode_max_freqを計算する
     node_max_freq = {}
     for n in node_indices:
         c = node_token_freq[n]
         node_max_freq[n] = max(c.values()) if c else 1
 
-    # (B) df_x: 단어 x가 등장한 노드 수
+    # (2) df_xを計算する: 単語xが出現するノードの数
     df_x_dict = defaultdict(int)
     for x in vocab_dict.keys():
         cnt = 0
@@ -189,11 +175,10 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
                 cnt += 1
         df_x_dict[x] = cnt
 
-    # (C) vocab 정렬
     sorted_vocab = sorted(vocab_dict.keys())
     vocab_index_map = {tok: i for i, tok in enumerate(sorted_vocab)}
 
-    # (D) 벡터화
+    # (3) ノード単語ベクトルを生成する
     node_term_vector = {}
     for n in node_indices:
         freq_map = node_token_freq[n]
@@ -217,7 +202,7 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
 
         node_term_vector[n] = weighted_vec
 
-    # (E) 코사인 유사도 계산
+    # (4) コサイン類似度を計算する関数
     def cos_sim(vecA, vecB):
         dot_val = 0.0
         normA = 0.0
@@ -230,6 +215,7 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
             return 0.0
         return dot_val / math.sqrt(normA * normB)
 
+    # (5) ノード単語ベクトル間のコサイン類似度を計算する
     cos_sim_dict = {}
     sorted_nodes = sorted(node_indices)
     for i in range(len(sorted_nodes)):
@@ -242,37 +228,27 @@ def node_vector_space_model(result, vocab_dict, only_tf=False):
     return cos_sim_dict, sorted_nodes
 
 def build_timestamp_info(item_nodes, item_edges):
-    """
-    1) info_SpecificTime 엣지로부터 timestamp 노드 찾기 (edge["from"]가 timestamp)
-    2) item_node_indices를 이용하여 각 노드별 대표 timestamp 노드를 찾는다.
-    3) timestamp 노드들을 정렬하여 rank를 부여.
-    4) group_map[node_idx] = {
-         "rep_node": 대표 timestamp 노드 인덱스 (또는 None),
-         "rank": 대표 timestamp 노드의 rank (int),
-         "group_size": 그 timestamp 그룹의 노드 수,
-         "timestamp_count": 전체 timestamp 노드의 개수
-       }
-    => 이 구조만 넘겨주면, calculate_node_temporal_proximity에서 node a, b 각각을 보고
-       d 계산에 필요한 모든 정보를 얻을 수 있음.
-    """
+    '''
+    info_SpecificTimeエッジからタイムスタンプノードを抽出し、各ノードがどのタイムスタンプに属するかを決める。
+    - item_nodes : ノードのインデックス一覧
+    - item_edges : エッジリスト
+    - return : group_map（各ノードに対応するタイムスタンプやランク情報を収めた辞書）
+    '''
 
-    # (A) info_SpecificTime 관계의 출발점 -> timestamp 노드
+    # (1) タイムスタンプを持つノードを探す
     timestamp_nodes = set()
     for e in item_edges:
         if e["type"] == "info_SpecificTime" and e["from"] in item_nodes:
             timestamp_nodes.add(e["from"])
 
-    # (B) timestamp_count
     timestamp_count = len(timestamp_nodes)
 
-    # (C) timestamp 노드를 정렬, rank 부여
     sorted_timestamps = sorted(timestamp_nodes)
     timestamp_rank = {}
     for i, tnode in enumerate(sorted_timestamps):
         timestamp_rank[tnode] = i  # rank 0,1,2,...
 
-    # (D) 각 노드별 대표 timestamp 찾기
-    #     (인덱스가 작거나 같은 timestamp 노드 중 최댓값)
+    # (2) タイムスタンプ別に代表ノードを指定し、他のノードらをグループ化する
     rep_node = {}
     for idx in item_nodes:
         if idx in timestamp_nodes:
@@ -284,9 +260,8 @@ def build_timestamp_info(item_nodes, item_edges):
                     candidate = tnode
                 else:
                     break
-            rep_node[idx] = candidate  # 없으면 None
+            rep_node[idx] = candidate 
 
-    # (E) 같은 rep_node를 공유하는 노드끼리 그룹 -> group_map[rep_node_idx] = [node1,node2,...]
     from collections import defaultdict
     big_group_map = defaultdict(list)
     for idx in item_nodes:
@@ -294,114 +269,81 @@ def build_timestamp_info(item_nodes, item_edges):
         if r is not None:
             big_group_map[r].append(idx)
 
-    # (F) group_map[node] = { "rep_node":..., "rank":..., "group_size":..., "timestamp_count":... }
     group_map = {}
     for idx in item_nodes:
         r = rep_node[idx]
-        # rank: r이 None이면 0
         node_rank = timestamp_rank.get(r, 0) if r else 0
-        # group_size: r가 있으면 big_group_map[r]의 길이, 없으면 0
         grp_size = len(big_group_map[r]) if r else 0
 
         group_map[idx] = {
-            "rep_node": r,                 # None or idx of timestamp
-            "rank": node_rank,             # int
-            "group_size": grp_size,        # int
+            "rep_node": r,                 
+            "rank": node_rank,             
+            "group_size": grp_size,        
             "timestamp_count": timestamp_count
         }
 
     return group_map
 
 def calculate_node_temporal_proximity(a_idx, b_idx, group_map, alpha=0.5):
-    """
-    group_map: build_timestamp_info(...)가 반환한 사전
-      group_map[node_idx] = {
-         "rep_node": ...,
-         "rank": ...,
-         "group_size": ...,
-         "timestamp_count": ...
-      }
-    => 이를 통해 time_evolution_score 계산에 필요한 정보를 얻는다.
+    '''
+    タイムスタンプ情報をもとに、ノード間の時間的近さ(temporal_proximity)を推定する関数。
+    - alpha : dに対する重み
+    '''
 
-    규칙:
-      1) timestamp_count = 0 -> return 1.0
-      2) 같음timestamp => group_size>10 -> d= (1000/(group_size-1))*(b-a), else d=100*(b-a)
-      3) 다른timestamp => d=100*(b-a)+1000*(|rankA-rankB|)
-      4) T= timestamp_count*1000
-      => exp(-alpha*(d/T))
-    """
-    # (A) timestamp_count
-    timestamp_count = group_map[a_idx]["timestamp_count"]  # a,b 동일한 timestamp_count
+    # (1) 計算の準備
+    timestamp_count = group_map[a_idx]["timestamp_count"] 
     if timestamp_count == 0:
         return 1.0
     T = timestamp_count * 1000
 
-    # (B) rep_node + rank + group_size
     a_rep = group_map[a_idx]["rep_node"]
     b_rep = group_map[b_idx]["rep_node"]
     a_rank = group_map[a_idx]["rank"]
     b_rank = group_map[b_idx]["rank"]
     group_size = group_map[a_idx]["group_size"]
 
-    # (C) 인덱스 차
-    m = b_idx - a_idx  # a_idx<b_idx라고 가정
-    # 만약 a_idx>b_idx 가능성이 있으면 if m<0: m=-m
+    m = b_idx - a_idx  
 
-    # (D) d 계산
+    # (2) temporal_proximityの計算
     if a_rep is not None and b_rep is not None and a_rep == b_rep:
-        # 같은 timestamp
         if group_size > 10:
             d = (1000.0 / (group_size - 1)) * m
         else:
             d = 100*m
     else:
-        # 다른 timestamp
         rank_diff = abs(b_rank - a_rank)
         d = 100*m + 1000*rank_diff
 
-    # (E) 최종
     return math.exp(-alpha*(d / T))
 
 def calculate_node_distributional_proximity(node_a_idx, node_b_idx, N, beta=0.5):
-    """
-    node_a_idx < node_b_idx 라고 가정.
-    m = node_b_idx - node_a_idx
-    distributional_proximity = e^((-1)*beta*(m/N))
-    """
+    '''
+    ノードインデックスの差を見て分布上の近さ(distributional_proximity)を評価する関数。
+    - N : 全ノード数
+    '''
     m = node_b_idx - node_a_idx
     if m < 0:
-        m = -m  # 혹시나 a_idx > b_idx인 경우를 방어적으로 처리
+        m = -m  
     dp = math.exp(-beta * (m / N))
     return dp
 
 def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, original_sentences, doc_created_edge_indexes):
-    """
-    1) 술어/엔티티 노드 -> lines_for_tokenize
-    2) tokenize_sentence(...) 호출 -> (result, vocab_dict) 받음
-    3) node_vector_space_model(...) 호출 -> 벡터화 + 코사인 유사도 계산
-    4) 이후 필요시 로깅, 혹은 결과를 반환
-    """
+    '''
+    ある項目（item）に含まれるノードを対象に、時間的な進行関係を推定し、next_TimeStampエッジを付与する。
+    - entity_nodes : その項目に含まれるエンティティノード
+    - predicate_nodes : その項目に含まれる述語ノード
+    - original_sentences : 項目全体の元文など
+    - doc_created_edge_indexes : 生成したエッジのインデックスを追跡するセット
+    '''
 
-    log_to_file("----------------------------")
+    log_to_file("Starting time evolution relationship calculation...")
 
-    # (A) 술어 노드 정렬
+    # (1) ノードテキストを集めてトークナイズ
     sorted_predicates = sorted(predicate_nodes, key=lambda x: x["index"])
-
-    # (B) 노드 텍스트 모으기
     lines_for_tokenize = []
     node_text_dict = {}
     node_type_dict = {}
     agent_arg_dict = {}
-
-    """
-    for ent_node in entity_nodes:
-        text_ent = ent_node.get("entity", "").strip()
-        if text_ent:
-            node_idx = ent_node["index"]
-            lines_for_tokenize.append(f"({node_idx}) {text_ent}")
-            node_text_dict[node_idx] = text_ent
-            node_type_dict[node_idx] = "entity"
-    """
 
     for pred_node in sorted_predicates:
         pred_text = convert_predicate_to_text(pred_node).strip()
@@ -417,45 +359,44 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
         else:
             agent_arg_dict[node_idx] = agent_arg.strip()
 
-    # 노드가 없다면 종료
+
     if not lines_for_tokenize:
-        log_to_file("[INFO] 토큰화할 노드 텍스트가 없습니다.")
-        log_to_file("----------------------------")
+        log_to_file("[DEBUG] No nodes to tokenize.")
         return
 
-    # (C) 토크나이즈 함수 호출
     result, vocab_dict = tokenize_sentence(lines_for_tokenize, node_type_dict)
     if not result:
-        log_to_file("[INFO] tokenization failed or empty result.")
+        log_to_file("[DEBUG] tokenization failed or empty result.")
         return
 
-    # (D) node_vector_space_model 호출 (TF or TF-IDF 결정 가능)
+    # (2) TFベースのベクトル化 & コサイン類似度取得
     ONLY_TF_TERM_WEIGHT = True 
     cos_sim_dict, sorted_nodes = node_vector_space_model(result, vocab_dict, only_tf=ONLY_TF_TERM_WEIGHT)
 
-    # (F) 현재 item에 속한 edge 필터링
+    # (3) タイムスタンプ情報の構築
     from source.document_parsing.edge_maker import get_edge
     all_edges = get_edge()
     item_edges = [e for e in all_edges if (e["from"] in sorted_nodes or e["to"] in sorted_nodes)]
     group_map = build_timestamp_info(sorted_nodes, item_edges)
 
+    # (4) cos_sim と時間分布からスコアを計算して next_TimeStamp を付与
     for (a_idx,b_idx),cos_sim_val in sorted(cos_sim_dict.items()):
 
         time_evolution_score = 0
 
-        # 인덱스 값의 차이가 1이라면 score에 보너스 0.3
+        # (5) ルールベースのスコア値にボナススコア
         if (b_idx-a_idx==1):
-            time_evolution_score += 0.3
-            # 주어가 같다면 보너스 0.3
+            time_evolution_score += 0.3 # インデックス番号の差が1の場合はscoreに加算(0.3)
             if (agent_arg_dict.get(a_idx, "") != "" and agent_arg_dict[a_idx] == agent_arg_dict.get(b_idx, "")):
-                time_evolution_score += 0.3
+                time_evolution_score += 0.3 # 主語が同じの場合はscoreに加算(0.3)
 
-        # distributional_proximity 계산 (N은 node_indices 길이)
+        # (6) temporal_proximity & distributional_proximityを計算
         temporal_prox = calculate_node_temporal_proximity(a_idx, b_idx, group_map, alpha=0.5)
         distributional_prox = calculate_node_distributional_proximity(a_idx, b_idx, N= len(sorted_nodes), beta=0.5)
         time_evolution_score += cos_sim_val * temporal_prox * distributional_prox
 
 
+        # (7) next_TimeStamp関係を付与
         if time_evolution_score >= TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING:
             append_edge_info("next_TimeStamp", a_idx, b_idx, doc_created_edge_indexes)
 
@@ -467,5 +408,3 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
                 f"cos_sim={cos_sim_val:.3f}, temp_prox={temporal_prox:.3f}, distr_prox={distributional_prox:.3f}, "
                 f"time_evolution_score={time_evolution_score:.3f}"
             )
-
-    log_to_file("----------------------------")

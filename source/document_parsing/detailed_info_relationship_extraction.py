@@ -1,4 +1,5 @@
 # detailed_info_relationship_extraction.py
+# 説明関係を抽出し、エッジへ追加するモジュール
 
 import re
 from openai import OpenAI
@@ -8,15 +9,15 @@ from source.document_parsing.edge_maker import append_edge_info, get_edge
 client = OpenAI()
 
 def extract_explain_details_relationship(sentence, node_list, doc_created_indexes):
-    """
-    - 설명관계 추출을 위한 단일 함수
-    - 'sentence': str (문장 원문)
-    - 'node_list': [{"index":..., "text":...}, ...] 형태 (노드 정보)
-    - 내부에 프롬프트와 예시가 직접 포함되어 있음
-    - OpenAI API 호출 후 결과를 파싱하여, explanation(설명) 엣지를 생성
-    """
+    '''
+    文とノード情報をもとに、説明関係を抽出して "explain_details" エッジを生成する。
+    - sentence : 原文
+    - node_list : [{"index":..., "text":...}, ...]
+    - doc_created_indexes : 生成したエッジのインデックスを追跡するセット
+    '''
 
     try:
+        # (1) GPTに与えるプロンプト
         prompt = (
             "[タスク目的]\n"
             "入力文に対して、文から抽出されたノード間に存在する説明関係を抽出する。\n"
@@ -159,8 +160,6 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
                 "output": "[EXPLAIN_RELATION]\n無し"
             }
         ]
-
-        # 2) messages 구성
         messages = [
             {
                 "role": "system",
@@ -171,8 +170,6 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
                 "content": prompt
             }
         ]
-
-        # 3) few-shot 예시 추가
         for example in examples:
             example_sentence = example["input"]["sentence"]
             example_nodes = example["input"]["nodes"]
@@ -187,8 +184,6 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
             example_output_str = example["output"]
             messages.append({"role": "user", "content": example_input_str})
             messages.append({"role": "assistant", "content": example_output_str})
-
-        # 4) 실제 입력 데이터(함수 파라미터)
         node_str = "\n".join(
             f"{{index:{n['index']}, text:{n['text']}}}"
             for n in node_list
@@ -199,7 +194,7 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
         )
         messages.append({"role": "user", "content": final_input_str})
 
-        # 5) API 호출
+        # (2) 実際にAPIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -207,16 +202,10 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
         )
         content = response.choices[0].message.content.strip()
 
-        # 토큰로그
         if hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
             log_token_usage(response.usage.total_tokens)
 
-        # 6) 결과 파싱 + Edge 생성
-        #   출력형식 예시:
-        #   [EXPLAIN_RELATION]
-        #   (1) (被説明ノードindex, 説明ノードindex, 説明対象)
-        #   (2) ...
-        #   ... or "無し"
+        # (3) 結果からを抽出
         lines = content.splitlines()
         in_section = False
         existing_edges = get_edge()
@@ -231,22 +220,21 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
             if line == "無し":
                 break
 
-            # 정규식 예시: (1) (5,1,'アニメのフィギュア')
+            # (4) 正規表現による分析
             match = re.match(r'^\(\d+\)\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*\'(.*?)\'\s*\)$', line)
             if match:
-                be_explained_idx = int(match.group(1))   # 피설명 노드
-                explain_idx = int(match.group(2))        # 설명 노드
-                target_str = match.group(3)             # 설명대상
+                be_explained_idx = int(match.group(1))   # 被説明ノード
+                explain_idx = int(match.group(2))        # 説明ノード
+                target_str = match.group(3)              # 説明対象
                 
+                # (5) explain_cause & explain_reason　関係と重複確認
                 cause_conflict = any(e['type'] == "explain_cause" and e['from'] == be_explained_idx and e['to'] == explain_idx for e in existing_edges)
                 reason_conflict = any(e['type'] == "explain_reason" and e['from'] == be_explained_idx and e['to'] == explain_idx for e in existing_edges)
                 
                 if not (cause_conflict or reason_conflict):
-                    # 설명대상을 로그로 남김
                     log_to_file(f"[ExplainTarget] {target_str}")
-                    # (피설명노드) --(explain_details)--> (설명노드)
+                    # (被説明ノード) --(explain_details)--> (説明ノード)　関係の付与
                     append_edge_info("explain_details", be_explained_idx, explain_idx, doc_created_indexes)
-
 
     except Exception as e:
         print(f"Error extracting explanation relation: {e}")

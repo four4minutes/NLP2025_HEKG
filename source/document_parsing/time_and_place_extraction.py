@@ -1,3 +1,6 @@
+#time_and_place_extraction.py
+#時間と場所表現を抽出するモジュール
+
 from openai import OpenAI
 import unicodedata
 import re
@@ -6,10 +9,14 @@ from source.document_parsing.logger import log_token_usage
 client = OpenAI()
 
 def extract_time_and_place(sentence: str) -> dict:
-    """
-    문장에서 시간 표현과 장소 표현을 추출하는 함수.
-    """
+    '''
+    文から時間表現と場所表現を抽出する関数。
+    時間表現・場所表現が存在しない場合は空のリストを返す。
+    - sentence : 処理対象の文
+    - return : {"time": [...], "place": [...]}
+    '''
     try:
+        # (1) GPTに与えるプロンプト
         prompt = (
             "以下の文から時間表現と場所表現を抽出してください。\n"
             "条件:\n"
@@ -56,20 +63,16 @@ def extract_time_and_place(sentence: str) -> dict:
                 "output": "<time : 無し>, <place : 無し>"
             }
         ]
-        # few-shot을 위한 messages 구성
         messages = [
             {"role": "system", "content": "You are an assistant that extracts time and place expressions from a sentence."},
             {"role": "user", "content": prompt},
         ]
-
-        # 예시 제공
         for example in examples:
             messages.append({"role": "user", "content": f"文: {example['input']}"})
             messages.append({"role": "assistant", "content": example['output']})
-
-        # 최종적으로 실제 문장에 대한 요청
         messages.append({"role": "user", "content": f"文: {sentence}"})
 
+        # (2) 実際にAPIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -87,7 +90,7 @@ def extract_time_and_place(sentence: str) -> dict:
         time_pattern = re.findall(r"<time\s*:\s*(.*?)>", content)
         place_pattern = re.findall(r"<place\s*:\s*(.*?)>", content)
         
-        # 시간 처리
+        # (3) 結果から時間表現を抽出
         if time_pattern:
             has_none_time = any(t.strip() == "無し" for t in time_pattern)
             if has_none_time:
@@ -101,7 +104,7 @@ def extract_time_and_place(sentence: str) -> dict:
         else:
             time_and_place["time"] = []
 
-        # 장소 처리
+        # (4) 結果から場所表現を抽出
         if place_pattern:
             has_none_place = any(p.strip() == "無し" for p in place_pattern)
             if has_none_place:
@@ -123,9 +126,9 @@ def extract_time_and_place(sentence: str) -> dict:
         return {"time": [], "place": []}
 
 def expand_place_expression(sentence: str, place: str) -> str:
-    """
-    장소 표현을 기준으로 문장에서 「の」로 연결된 명사구를 확장.
-    """
+    '''
+    場所表現を文中で「の」でつながっている場合などに拡張して取得する補助関数。
+    '''
     if place in sentence:
         pattern = re.compile(rf"(?:[^。、]+の)*{re.escape(place)}(?:の[^。、]+)*")
         match = pattern.search(sentence)
@@ -134,15 +137,15 @@ def expand_place_expression(sentence: str, place: str) -> str:
     return place
 
 def normalize_text(text: str) -> str:
-    """
-    문자열을 정규화하여 전각/반각 문자와 공백을 통일.
-    """
+    '''
+    文字列を正規化する。空白削除や全角英数を半角に揃えるなど。
+    '''
     return unicodedata.normalize('NFKC', text).replace(" ", "").strip()
 
 def remove_expressions(sentence: str, expressions: list) -> str:
-    """
-    문장에서 주어진 표현들과 뒤에 오는 접속사 또는 콤마를 포함하여 제거.
-    """
+    '''
+    文から特定表現を取り除く関数。必要に応じて拡張。
+    '''
     normalized_sentence = normalize_text(sentence)
     normalized_expressions = [normalize_text(expr) for expr in expressions]
 

@@ -26,60 +26,49 @@ CASE_MARKERS = {
 STOP_WORDS = {"が", "で", "した", "に", "する", "を", "から", "の", "へ", "て", "と", "など", "による", "、", "し", "な", '"'}
 
 def normalize_text(text: str) -> str:
+    '''
+    テキストを正規化して全角/半角や記号を整える関数。
+    '''
     text = text.strip()
     text = text.replace("（", "(").replace("）", ")")
     text = text.replace("「", '"').replace("」", '"')
     return text
 
-def extract_expressions_from_structure(
-    sentence: str, 
-    predicate_argument_structures: list
-) -> tuple:
-    """
-    (修正版)
-    1) 常に、以下の順序で各表現を整列する:
-       - ガ格 (0)
-       - ガ格以外の格要素 (外の関係以外) (1)
-       - 修飾 (2)
-       - 述語 (3)
-       - 外の関係 (4)
-    2) CASE_MARKERS に定義されていない格要素の場合、'格' を除去した文字列を使用する。
-    3) expressions_with_case と expressions_without_case のタプルを返す。
-    """
+def extract_expressions_from_structure(sentence: str, predicate_argument_structures: list) -> tuple:
+    '''
+    述語項構造（カンマ区切り）から格要素や修飾などを抽出して、
+    “格付き”リストと“格なし”リストに分解して返す。
+    '''
     expressions_with_case = []
     expressions_without_case = []
 
     splitted_structures = []
     for structure in predicate_argument_structures:
         structure = normalize_text(structure)
-        # カンマで分割
         splitted_structures.extend([s.strip() for s in structure.split(",") if s.strip()])
 
     tmp_list = []
     for structure in splitted_structures:
         structure = normalize_text(structure)
-        # 例："車両(ガ格)" や "義務(外の関係)" のように抽出
         matches = re.findall(r"^(.*)\((.*?)\)$", structure)
         for noun_or_modifier, case_type in matches:
             normalized_expression = normalize_text(noun_or_modifier)
             case_type = case_type.strip()
 
             if case_type == "外の関係":
-                # 外の関係はそのまま
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
             elif case_type.endswith("格"):
-                # 格要素の場合、CASE_MARKERS に定義されているか否かにかかわらず
                 if case_type in CASE_MARKERS:
                     expression_with_case = f"{normalized_expression}{CASE_MARKERS[case_type]}"
                 else:
-                    print(f"정의되지 않은 격요소 출현: {case_type}")
+                    print(f"Undefined case marker found: {case_type}")
                     unknown_marker = re.sub(r'格$', '', case_type)
                     expression_with_case = f"{normalized_expression}{unknown_marker}"
                 tmp_list.append((expression_with_case, normalized_expression, case_type))
             elif case_type in ["述語", "修飾"]:
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
             else:
-                print(f"정의되지 않은 요소 출현: {case_type}")
+                print(f"Undefined element found: {case_type}")
                 tmp_list.append((normalized_expression, normalized_expression, case_type))
 
     def sort_key(item):
@@ -105,6 +94,11 @@ def extract_expressions_from_structure(
     return expressions_with_case, expressions_without_case
 
 def remove_expressions(sentence: str, expressions: list) -> str:
+    '''
+    渡された表現（expressions）を文から順次除去する。
+    - sentence : 元の文
+    - expressions : 除去対象文字列のリスト
+    '''
     modified_sentence = normalize_text(sentence)
     for expression in expressions:
         normalized_expression = normalize_text(expression)
@@ -113,12 +107,12 @@ def remove_expressions(sentence: str, expressions: list) -> str:
     return modified_sentence.strip()
 
 def process_sentence_with_residue_removal(sentence: str, predicate_argument_structures: list) -> str:
+    '''
+    述語項構造から抽出した表現を文から取り除き、残差を確認する処理。
+    '''
     normalized_sentence = normalize_text(sentence)
 
-    # 수정된 extract_expressions_from_structure
-    expressions_with_case, expressions_without_case = extract_expressions_from_structure(
-        normalized_sentence, predicate_argument_structures
-    )
+    expressions_with_case, expressions_without_case = extract_expressions_from_structure(normalized_sentence, predicate_argument_structures)
 
     sentence_after_case_removal = remove_expressions(normalized_sentence, expressions_with_case)
     final_sentence = remove_expressions(sentence_after_case_removal, expressions_without_case)
@@ -126,68 +120,45 @@ def process_sentence_with_residue_removal(sentence: str, predicate_argument_stru
     return final_sentence
 
 def convert_predicate_to_text(predicate_node: dict) -> str:
-    """
-    Predicate Structure 노드를 받아, 
-    (agent_argument, argument[], modifier, predicate) 순서로 우선 문자열로 합친 뒤,
-    extract_expressions_from_structure를 통해
-    'ガ格 -> 그 외格 -> 修飾 -> 述語' 순서로 정렬·조사 변환한 최종 문자열을 만든다.
-
-    예) node:
-      {
-        "index": 18,
-        "agent_argument": "車輪を支える軸のねじ部(ガ格)",
-        "predicate": "切断した(述語)",
-        "argument": ["疲労破壊(デ格)"],
-        "modifier": ""
-      }
-    -> "車輪を支える軸のねじ部(ガ格), 疲労破壊(デ格), 切断した(述語)"
-    -> extract_expressions_from_structure -> "車輪を支える軸のねじ部が 疲労破壊で 切断した"
-    """
+    '''
+    述語ノードの情報からガ格・その他格・修飾・述語を一つにつなげた文字列を生成し、
+    格要素を正規の形に再フォーマットした結果を返す。
+    '''
     parts = []
 
-    # (A) agent_argument
     if predicate_node.get("agent_argument"):
         parts.append(predicate_node["agent_argument"])
 
-    # (B) argument[]
     if predicate_node.get("argument"):
         for arg in predicate_node["argument"]:
             parts.append(arg)
 
-    # (C) modifier
     if predicate_node.get("modifier"):
         parts.append(predicate_node["modifier"])
 
-    # (D) predicate
     if predicate_node.get("predicate"):
         parts.append(predicate_node["predicate"])
 
-    # 콤마로 합침
     joined_text = ", ".join(p for p in parts if p)
 
-    # extract_expressions_from_structure를 호출
     with_case, _ = extract_expressions_from_structure(joined_text, [joined_text])
     final_str = "".join(with_case)
     return final_str
 
 def is_heading_start(text: str) -> bool:
-    """
-    '１．' '1.' '2.' 등등, 혹은 '注' 등으로 시작하거나,
-    [・（）注]+ 등이 전부인 경우를 판단하는 함수.
-    """
+    '''
+    見出しのような短いパターンかどうかを判定する。
+    例えば "1." "2." "注" "・" のみ などをチェック。
+    '''
     text = normalize_text(text)
     text = re.sub(r'[０-９]', lambda x: chr(ord(x.group(0)) - 0xFEE0), text)
-
-    # 기존 json_processor.py의 패턴
-    # ^(\d+\.|[・（）注]+)   # 시작 부분
     pattern = r'^(\d+\.|[・（）注]+)$'
-    # 간단 판별
     return bool(re.match(pattern, text.strip()))
 
 def split_heading_and_rest(value: str):
-    """
-    value가 heading에 해당하면, heading prefix와 나머지(rest)를 분리해서 반환.
-    """
+    '''
+    見出し部分と残りの部分に分割する関数。該当しなければ (None, None) を返す。
+    '''
     item_normalized = re.sub(r'[０-９]', lambda x: chr(ord(x.group(0)) - 0xFEE0), value)
     pattern = r'^(\d+\.|[・（）注]+)\s?(.*)$'
     match = re.match(pattern, item_normalized)
@@ -199,21 +170,12 @@ def split_heading_and_rest(value: str):
         return None, None
     
 def fix_predicate_structure_text(structure: str) -> str:
-    """
-    述語項構造をカンマ区切りで受け取り、
-    "テキスト(末尾) (格要素)" の形式を正規表現で抽出し、
-    もしCASE_MARKERSに定義されている格要素なら末尾の調査を除去し、
-    それ以外はそのまま返す。
-
-    例:
-      "地上で(デ格)" → CASE_MARKERSに「デ格」が定義されていれば "で"
-      に一致するか確認し、一致すれば "地上(デ格)" に修正。
-      未定義であれば変更せず元の文字列を返す。
-    """
+    '''
+    述語項構造内の末尾の調整などを行い、表記ゆれを修正する補助的な関数。
+    '''
     segments = [seg.strip() for seg in structure.split(",")]
     fixed_segments = []
     for seg in segments:
-        # 例: "地上で(デ格)" -> base_text="地上", trailing="で", case_type="デ格"
         m = re.match(r"^(.*?)(\S*)\(([^)]+)\)$", seg)
         if m:
             base_text = m.group(1)
@@ -221,18 +183,14 @@ def fix_predicate_structure_text(structure: str) -> str:
             case_type = m.group(3).strip()
 
             if case_type in CASE_MARKERS:
-                # 정의된 격요소인 경우에만 trailing 체크
                 if trailing == CASE_MARKERS[case_type]:
-                    # 맨 뒤 조사 제거하여 "base_text(case_type)"로 교체
                     fixed_seg = f"{base_text}({case_type})"
                 else:
                     fixed_seg = seg
             else:
-                # CASE_MARKERS에 없는 격요소이면 그대로 둠
                 fixed_seg = seg
             fixed_segments.append(fixed_seg)
         else:
-            # 일치하지 않으면 그대로
             fixed_segments.append(seg)
 
     return ", ".join(fixed_segments)

@@ -1,4 +1,5 @@
 # causal_relationship_extraction.py
+# 因果関係を抽出し、エッジへ追加するモジュール
 
 import re
 from openai import OpenAI
@@ -8,18 +9,15 @@ from source.document_parsing.edge_maker import append_edge_info
 client = OpenAI()
 
 def extract_causal_relationship(sentence, node_list,doc_created_indexes):
-    """
-    - 인과관계 추출을 위한 단일 함수
-    - 'sentence': str (문장 원문)
-    - 'node_list': [{"index":..., "text":...}, ...] 형태 (predicate/entity 노드만)
-    - 내부에 프롬프트와 예시가 직접 포함되어 있음
-    - OpenAI API 호출 후 결과를 파싱하여, explain_cause 엣지를 생성
-    """
-
-    # 1) 프롬프트 + 예시(간략화)
-    #   실제 사용 시, 아래 prompt_text와 examples_content를
-    #   질문에서 주신 내용을 그대로 붙여넣으면 됩니다.
+    '''
+    文とノード情報をもとに、因果関係があれば抽出して "explain_cause" や "explain_reason" エッジを生成する。
+    - sentence : 原文
+    - node_list : [{"index":..., "text":...}, ...]
+    - doc_created_indexes : 生成したエッジのインデックスを追跡するセット
+    '''
+    
     try:
+        # (1) GPTに与えるプロンプト
         prompt = (
             '[タスク目的]\n'
             '入力文に対して、文から抽出されたノード間に存在する因果関係を抽出する。\n'
@@ -192,8 +190,6 @@ def extract_causal_relationship(sentence, node_list,doc_created_indexes):
             {"role": "system", "content": "You are an assistant that extracts causal relationships between nodes."},
             {"role": "user", "content": prompt}
         ]
-
-        # 3) few-shot 예시 추가
         for example in examples:
             example_sentence = example["input"]["sentence"]
             example_nodes = example["input"]["nodes"]
@@ -205,9 +201,6 @@ def extract_causal_relationship(sentence, node_list,doc_created_indexes):
             example_output_str = example["output"]
             messages.append({"role": "user", "content": example_input_str})
             messages.append({"role": "assistant", "content": example_output_str})
-
-        # 4) 실제 입력
-        # 노드 정보 문자열화
         node_str = "\n".join(
             f"{{index:{n['index']}, text:{n['text']}}}"
             for n in node_list
@@ -218,7 +211,7 @@ def extract_causal_relationship(sentence, node_list,doc_created_indexes):
         )
         messages.append({"role": "user", "content": final_input_str})
 
-        # 5) API 호출
+        # (2) 実際にAPIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
@@ -229,11 +222,7 @@ def extract_causal_relationship(sentence, node_list,doc_created_indexes):
         if hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
             log_token_usage(response.usage.total_tokens)
 
-        # 6) 결과 파싱 + Edge 생성
-        #   예: 
-        #   [CAUSAL_RELATION]
-        #   (1) (원인, 結果, 'LABEL', 'cue')
-        #   (2) ...
+        # (3) 結果からを抽出
         lines = content.splitlines()
         in_section = False
         for line in lines:
@@ -246,18 +235,18 @@ def extract_causal_relationship(sentence, node_list,doc_created_indexes):
             if line == "無し":
                 break
 
-            # 정규식: (1) (11, 12, 'cause', 'ため')
+            # (4) 正規表現による分析
             match = re.match(r'^\(\d+\)\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*\'(cause|reason)\'\s*,\s*\'(.*?)\'\)$', line)
             if match:
                 cause_idx = int(match.group(1))
                 effect_idx = int(match.group(2))
-                label_str = match.group(3)  # 'cause' or 'reason'
+                label_str = match.group(3)  
                 cue_str = match.group(4)
 
-                # (결과) --(explain_cause)--> (원인)
+                # (結果) --(explain_cause)--> (原因) 関係の付与
                 if label_str == "cause":
                     append_edge_info("explain_cause", effect_idx, cause_idx, doc_created_indexes)
-                # (결과) --(explain_reason)--> (원인)
+                # (結果) --(explain_reason)--> (原因) 関係の付与
                 if label_str == "reason":
                     append_edge_info("explain_reason", effect_idx, cause_idx, doc_created_indexes)
 
