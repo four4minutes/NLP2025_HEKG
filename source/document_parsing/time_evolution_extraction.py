@@ -88,7 +88,7 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
     user_prompt = ("上記の例を参考に、以下の各行をトークンに分割し、""動詞は基本形に変換して出力してください。\n\n"+"\n".join(lines_for_tokenize))
     messages.append({"role": "user", "content": user_prompt})
 
-    # (2) 実際にAPIを呼び出す
+    # (2) OpenAI APIを呼び出す
     client_api = client.chat.completions
     try:
         response = client_api.create(
@@ -98,8 +98,7 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
         )
         content = response.choices[0].message.content.strip()
     except Exception as e:
-        log_to_file(f"[ERROR] OpenAI API 호출失敗: {e}")
-        log_to_file("----------------------------")
+        log_to_file(f"[ERROR] OpenAI API call failed: {e}")
         return [], {}
 
     # (3) 結果からトークンを抽出
@@ -132,7 +131,7 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
             filtered.append(tk)
 
         if node_type_dict.get(node_idx) == "predicate" and filtered:
-            filtered.pop()  #最後のトークンを落とす
+            filtered.pop() 
 
         result.append((node_idx, filtered))
 
@@ -327,6 +326,103 @@ def calculate_node_distributional_proximity(node_a_idx, node_b_idx, N, beta=0.5)
     dp = math.exp(-beta * (m / N))
     return dp
 
+def GPT_inspection(original_sentences, predicate_nodes, time_evolution_edges):
+    '''
+    GPTに対して、与えられた原文とノード、および既存の時間関係を入力し、
+    見落としている時間関係が無いかチェックさせる関数。
+    - original_sentences : 項目全体の原文文字列
+    - predicate_nodes : 述語ノードのリスト [{'index':..., 'predicate':...}, ...]
+    - time_evolution_edges : すでに検出済みの時間関係 (from_idx, to_idx) のリスト
+    戻り値 : 新たに発見された(かもしれない)時間関係のリスト
+    '''
+
+    # (1) GPTに与えるプロンプト
+    system_prompt = (
+        "[指示]\n"
+        "あなたは時間関係が適切に付与されているかを検査するアシスタントです。\n"
+        "ここで言う「時間関係」とは、テキスト内に描写された事象を時間の流れに沿って並べ、"
+        "どの順番で事象が起きたかを定義する関係を指します。\n"
+        "例えば、「コンビニに行き、おにぎりとカップラーメンを買い、家に戻った。」という原文があるとします。\n"
+        "ここでは (1)「コンビニに行き」、(2)「おにぎりとカップラーメンを買い」、(3)「家に戻った」の三つのノードがあると考えられ、"
+        "それらの間には (1)→(2)→(3) という時間関係が想定されます。\n"
+        "原文からノードへの分割やノード間の時間関係の付与は別のタスクで行われますが、必ずしも完璧とは限りません。\n"
+        "そこで、あなたの仕事は、既に付与された時間関係を点検し、"
+        "もし見落とされていると思われる関係があれば指摘することです。\n"
+        "補足として、時間関係はノード間の直接的な時間関係だけを考えます。"
+        "例えば先の例では (1)→(2)→(3) なので、(1)→(3) は時間的には正しい流れですが、(1)→(2) と (2)→(3) の 2 つの関係が存在している場合、"
+        "(1) と (3) の間の時間関係は必ず (2) を介して表現することにします。\n\n"
+        "[入力形式]\n"
+        "- 原文、ノード、ノード間の時間関係が提示されます\n"
+        "原文 : テキスト\n"
+        "ノード : (index) テキスト, (index) テキスト, (index) テキスト\n"
+        "→ 例： (1) コンビニに行く, (2) おにぎりを買う, (3) 家に戻る\n"
+        "時間関係 : (index, index), (index, index)\n"
+        "→ 例： (1,2), (2,3)\n"
+        "各カッコの左側を「より早い事象」、右側を「より後の事象」として記述してください。"
+        "複数のノード・関係はコンマ区切りで列挙します。\n\n"
+        "[出力形式]\n"
+        "- 追加で抽出（つまり見落とされていた）と思われる時間関係を列挙してください。\n"
+        "- もし見落としが無い場合は「無し」とだけ出力してください。\n"
+        "- 見落とされていると考えられる関係が複数ある場合は、(index, index)をコンマで並べて列挙してください。"
+    )
+
+    user_prompt = ""
+    user_prompt += f"原文 : {original_sentences.strip()}\n\n"
+
+    user_prompt += "ノード : "
+    node_str_list = []
+    for nd in predicate_nodes:
+        idx = nd["index"]
+        text_val = nd.get("predicate", nd.get("entity",""))
+        node_str_list.append(f"({idx}) {text_val}")
+    user_prompt += ", ".join(node_str_list) + "\n\n"
+
+    user_prompt += "時間関係 : "
+    if time_evolution_edges:
+        edge_str_list = []
+        for (f_idx, t_idx) in time_evolution_edges:
+            edge_str_list.append(f"({f_idx}, {t_idx})")
+        user_prompt += ", ".join(edge_str_list)
+    else:
+        user_prompt += "無し"
+    user_prompt += "\n"
+
+    # (2) OpenAI APIを呼び出す
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    client_api = client.chat.completions
+    try:
+        response = response = client_api.create(
+            model="gpt-4o",  
+            messages=messages,
+            temperature=0.0
+        )
+        content = response.choices[0].message.content.strip()
+    except Exception as e:
+        log_to_file(f"[ERROR] GPT_inspection API call failed: {e}")
+        return []
+
+    # (3) 出力を解析し、見落としが無ければ[]、(x,y)形式であればリストに追加して返す
+    if content.strip() == "無し": # 見落としなし
+        return []  
+
+    pair_pattern = re.compile(r'\(\s*(\d+)\s*,\s*(\d+)\s*\)') # 正規表現で抽出
+    new_relations = []
+    for match in pair_pattern.finditer(content):
+        a_str = match.group(1)
+        b_str = match.group(2)
+        try:
+            a_idx = int(a_str)
+            b_idx = int(b_str)
+            new_relations.append((a_idx, b_idx))
+        except ValueError:
+            pass
+
+    return new_relations
+
 def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, original_sentences, doc_created_edge_indexes):
     '''
     ある項目（item）に含まれるノードを対象に、時間的な進行関係を推定し、next_TimeStampエッジを付与する。
@@ -378,6 +474,7 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
     all_edges = get_edge()
     item_edges = [e for e in all_edges if (e["from"] in sorted_nodes or e["to"] in sorted_nodes)]
     group_map = build_timestamp_info(sorted_nodes, item_edges)
+    time_evolution_relationship = []
 
     # (4) cos_sim と時間分布からスコアを計算して next_TimeStamp を付与
     for (a_idx,b_idx),cos_sim_val in sorted(cos_sim_dict.items()):
@@ -399,6 +496,7 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
         # (7) next_TimeStamp関係を付与
         if time_evolution_score >= TIME_EVOLUTION_RELATIONSHIP_THRESHOLDING:
             append_edge_info("next_TimeStamp", a_idx, b_idx, doc_created_edge_indexes)
+            time_evolution_relationship.append((a_idx,b_idx))
 
         if time_evolution_score > 0:
             textA = node_text_dict.get(a_idx, "N/A")
@@ -408,3 +506,23 @@ def calculate_event_evolution_relationship(entity_nodes, predicate_nodes, origin
                 f"cos_sim={cos_sim_val:.3f}, temp_prox={temporal_prox:.3f}, distr_prox={distributional_prox:.3f}, "
                 f"time_evolution_score={time_evolution_score:.3f}"
             )
+        
+    # (9) GPTモデルを使って見落とされたnext_TimeStamp関係を点検
+    new_relations = GPT_inspection(original_sentences, predicate_nodes, time_evolution_relationship)
+
+    # (10) 見落とし可能性のある(Next_TimeStamp)関係があればログ出力
+    if new_relations:
+        log_to_file("[Time Evolution] GPT found new Next_TimeStamp relationship candidates:")
+        node_text_dict = {}
+        for nd in predicate_nodes:
+            idx = nd["index"]
+            txt = nd.get("predicate", nd.get("entity",""))
+            node_text_dict[idx] = txt
+
+        for (a_idx, b_idx) in new_relations:
+            txtA = node_text_dict.get(a_idx, "N/A")
+            txtB = node_text_dict.get(b_idx, "N/A")
+            log_to_file(f"  Node#{a_idx}({txtA}) => Node#{b_idx}({txtB})")
+    else:
+        log_to_file("[Time Evolution] No missing Next_TimeStamp relationships were detected")
+        

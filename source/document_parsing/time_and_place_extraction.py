@@ -72,7 +72,7 @@ def extract_time_and_place(sentence: str) -> dict:
             messages.append({"role": "assistant", "content": example['output']})
         messages.append({"role": "user", "content": f"文: {sentence}"})
 
-        # (2) 実際にAPIを呼び出す
+        # (2) OpenAI APIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,

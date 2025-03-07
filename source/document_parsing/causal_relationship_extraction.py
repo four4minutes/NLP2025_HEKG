@@ -211,7 +211,7 @@ def extract_causal_relationship(sentence, node_list,doc_created_indexes):
         )
         messages.append({"role": "user", "content": final_input_str})
 
-        # (2) 実際にAPIを呼び出す
+        # (2) OpenAI APIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,

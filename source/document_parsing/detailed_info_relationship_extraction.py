@@ -194,7 +194,7 @@ def extract_explain_details_relationship(sentence, node_list, doc_created_indexe
         )
         messages.append({"role": "user", "content": final_input_str})
 
-        # (2) 実際にAPIを呼び出す
+        # (2) OpenAI APIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,

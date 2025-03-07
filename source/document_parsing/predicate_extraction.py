@@ -252,7 +252,7 @@ def extract_predicates(sentence: str) -> tuple:
         }
     ]
 
-    # (3) APIを呼び出す
+    # (3) OpenAI APIを呼び出す
     response = client.chat.completions.create(
         model="gpt-4o",
         messages = [
@@ -793,7 +793,7 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
         )
         messages.append({"role": "user", "content": final_input})
 
-        # (3) 実際にAPIを呼び出す
+        # (3) OpenAI APIを呼び出す
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=messages,
