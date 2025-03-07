@@ -1,87 +1,99 @@
+# scrape_multiple_pages.py
+
 import os
-import shutil
 import requests
 from bs4 import BeautifulSoup
 import json
 from urllib.parse import urljoin
 import hashlib
 from scrape_to_json import scrape_to_json
-import sys
-
 
 def create_safe_filename(name):
-    """긴 파일 이름을 안전한 해시 값으로 변환"""
+    '''
+    文字列をハッシュ化して安全なファイル名に変換する関数。
+    - name : ハッシュ化したい文字列
+    戻り値はハッシュ値(.json)を付与したファイル名となる。
+    '''
     hash_object = hashlib.sha256(name.encode('utf-8'))
     return hash_object.hexdigest() + ".json"
 
-
 def get_safe_filename(name):
-    """파일 이름이 유효하면 그대로 사용하고, 유효하지 않으면 해시로 변환"""
+    '''
+    名前として使えない文字が含まれる場合、create_safe_filenameでハッシュに変換し、
+    問題なければ "名前.json" のまま使用する関数。
+    - name : ファイルとして使用予定の文字列
+    戻り値は使用可能な安全なファイル名。
+    '''
     try:
-        # 테스트로 파일을 생성했다가 삭제하여 유효성을 확인
+        # (1) テストファイルを作成して削除し、名前の有効性をチェック
         test_filename = f"{name}.test"
         with open(test_filename, 'w') as f:
             f.write("test")
         os.remove(test_filename)
         return f"{name}.json"
     except Exception:
-        # 파일 이름이 유효하지 않으면 해시로 대체
+        # (2) 名前に問題がある場合はハッシュで置き換える
         return create_safe_filename(name)
 
-
 def scrape_multiple_pages(base_url, main_page_url, category_folder_path):
+    '''
+    指定されたメインページ(main_page_url)から下層ページのリンクを抽出し、
+    各ページをスクレイピングしたJSONを保存してまとめる関数。
+    - base_url : 相対パスを絶対URLに変換するためのベースURL
+    - main_page_url : カテゴリ用ページのURL
+    - category_folder_path : JSONファイルを保存するフォルダパス
+    戻り値は 下層ページ名 -> 解析結果(JSONデータ) 形式のディクショナリ。
+    '''
     try:
-        # 메인 페이지 요청 및 HTML 파싱
+        # (1) メインページにリクエストを行い、パースする
         response = requests.get(main_page_url)
         response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')  # 인코딩 명시
+        soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
 
-        # 하위 페이지 링크 추출
+        # (2) 下層ページのリンクを抽出
         links = soup.select('ul.list_all li a')
-        print(f"총 {len(links)}개의 하위 페이지를 찾았습니다.")
+        print(f"Found {len(links)} sub-pages.")
 
-        # 결과를 저장할 딕셔너리 초기화
+        # (3) 結果を保存するディクショナリを初期化
         results = {}
 
-        # 각 하위 페이지 크롤링
+        # (4) 各下層ページを巡回しながら処理
         for i, link in enumerate(links):
             page_name = link.get_text(strip=True)
             relative_url = link['href']
-            print(f"[{i+1}/{len(links)}] '{page_name}' 페이지를 처리 중...")
+            print(f"[{i+1}/{len(links)}] Now processing sub page '{page_name}'...")
 
-            # URL 결합: base_url과 상대 URL을 결합
+            # (5) URLを結合して絶対URLにする
             full_url = urljoin(base_url + "/", relative_url.lstrip("./"))
 
-            # 안전한 파일 이름 생성
+            # (6) 安全なファイル名を作成
             safe_filename = get_safe_filename(page_name)
             individual_json_file = os.path.join(category_folder_path, safe_filename)
 
             try:
-                # 하위 페이지 JSON 저장
+                # (7) 下層ページのJSONを作成
                 scrape_to_json(full_url, individual_json_file)
 
-                # 임시 JSON 파일 로드 및 결과 병합
+                # (8) 一時的に保存したJSONを読み込んでマージ
                 with open(individual_json_file, 'r', encoding='utf-8') as f:
                     page_content = json.load(f)
 
-                # 원래 페이지 이름과 데이터 저장
+                # (9) ページ名をキーにしてresultsに格納
                 results[page_name] = page_content
-                print(f"'{page_name}' 페이지가 처리되었습니다.")
+                print(f"Sub page '{page_name}' is processed successfully.")
             except Exception as e:
-                print(f"하위 페이지 처리 중 오류가 발생했습니다: {e}")
+                print(f"[ERROR] An error occurred while processing sub page '{page_name}': {e}")
                 continue
 
         return results
 
     except Exception as e:
-        print(f"오류가 발생했습니다: {e}")
+        print(f"[ERROR] Exception occurred in scrape_multiple_pages: {e}")
         return {}
 
-# 사용 예시
-#if __name__ == "__main__":
-#    base_url = "https://www.shippai.org/fkd"  # 베이스 URL
-#    main_page_url = "https://www.shippai.org/fkd/lis/cat001.html"  # 메인 페이지 URL
-#            category_folder_path = os.path.join(root_folder_path, category_name)
-#            os.makedirs(category_folder_path, exist_ok=True)
-#
-#    scrape_multiple_pages(base_url, category_url, category_folder_path)
+# (メイン実行例)
+# if __name__ == "__main__":
+#     base_url = "https://www.shippai.org/fkd"
+#     main_page_url = "https://www.shippai.org/fkd/lis/cat001.html"
+#     category_folder_path = "some_path"
+#     scrape_multiple_pages(base_url, main_page_url, category_folder_path)
