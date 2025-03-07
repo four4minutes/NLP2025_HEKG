@@ -159,8 +159,8 @@ def process_sentence(sentence: str, doc_created_indexes=None):
         if n["type"] in ("predicate", "entity"):
             target_node_list.append({"index": n["index"], "text": n["text"]})   
 
-    extract_causal_relationship(sentence, target_node_list, doc_created_indexes) #인과관계 추출
-    extract_explain_details_relationship(sentence, target_node_list, doc_created_indexes) #설명관계 추출출
+    extract_causal_relationship(sentence, target_node_list, doc_created_indexes) #因果関係抽出
+    extract_explain_details_relationship(sentence, target_node_list, doc_created_indexes) #説明関係抽出
 
     # (13) 生成されたノードのインデックスをまとめて返す
     all_created_indexes = [d["index"] for d in created_nodes_in_sentence]

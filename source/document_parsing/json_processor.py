@@ -6,7 +6,8 @@ from source.document_parsing.edge_maker import append_edge_info, get_edge
 from source.document_parsing.sentence_parser import process_sentence
 from source.document_parsing.similarity_based_equivalent_extraction import run_similarity_check, create_equivalent_edges
 from source.document_parsing.text_utils import is_heading_start, split_heading_and_rest
-from time_evolution_extraction import calculate_event_evolution_relationship
+from source.document_parsing.time_evolution_extraction import calculate_event_evolution_relationship
+from source.document_parsing.entity_realation_extraction import extract_entity_relationship
 
 # 項目キャッシュ: 処理中の項目に属するノード情報を保持する
 _current_item_cache = {
@@ -34,29 +35,46 @@ def finalize_current_item(doc_created_edge_indexes=None):
         return
 
     if len(_current_item_cache["nodes"]) >= 2:
-        # (2) 除外条件に該当する関係を持つノードは分析から除外
+        # (2) 分析対象データの準備
+        # (2-1) ノードの情報を取得
+        all_entities   = get_entity_structure()
+        all_predicates = get_predicate_structure()
+
+        # (2-2) 項目キャッシュからインデックス情報を抽出
+        item_entity_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "entity" ]
+        item_predicate_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "predicate" ]
+
+        # (2-3) 項目キャッシュから原文情報を抽出
+        original_sentences = _current_item_cache["original_sentences"]
+
+        # (3) next_TimeStamp関係を生成
+        # (3-1) 除外条件に該当する関係を持つノードは分析から除外
         excluded_nodes = set()
-        all_edges = get_edge()
         for e in all_edges:
             if e["type"] in EXCLUDE_RELATION_TARGETS:
                 excluded_nodes.add(e["to"])
 
-        # (3) キャッシュからインデックス情報を抽出
-        item_entity_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "entity" ]
-        item_entity_indexes = [ idx for idx in item_entity_indexes if idx not in excluded_nodes]
-        item_predicate_indexes = [ x["index"] for x in _current_item_cache["nodes"] if x["type"] == "predicate" ]
-        item_predicate_indexes = [ idx for idx in item_predicate_indexes if idx not in excluded_nodes]
+        # (3-2) インデックス情報からevent_evolution_relationship分析対象ノードを取得
+        item_entity_for_event_indexes = [ idx for idx in item_entity_indexes if idx not in excluded_nodes]
+        item_predicate_for_event_indexes = [ idx for idx in item_predicate_indexes if idx not in excluded_nodes]
+        item_entity_nodes = [ e for e in all_entities   if e["index"] in item_entity_for_event_indexes ]
+        item_predicate_nodes = [ p for p in all_predicates if p["index"] in item_predicate_for_event_indexes ]
 
-        # (4) インデックス情報からノードを取得
-        all_entities   = get_entity_structure()
-        all_predicates = get_predicate_structure()
+        # (3-3) time_evolution_extractionモジュールに渡してnext_TimeStamp関係を生成
+        calculate_event_evolution_relationship(item_entity_nodes, item_predicate_nodes, original_sentences, doc_created_edge_indexes)
+
+        # (4) 自動生成関係を生成
+        # (4-1) インデックス情報からextract_entity_relationship分析対象ノードを取得
         item_entity_nodes = [ e for e in all_entities   if e["index"] in item_entity_indexes ]
         item_predicate_nodes = [ p for p in all_predicates if p["index"] in item_predicate_indexes ]
+        
+        # (4-2) インデックス情報からextract_entity_relationship分析対象エッジを取得
+        all_edges = get_edge()
+        item_node_indexes = set(item_entity_indexes + item_predicate_indexes)
+        item_edges = [edge for edge in all_edges if (edge["from"] in item_node_indexes or edge["to"] in item_node_indexes)]
 
-        original_sentences = _current_item_cache["original_sentences"]
-
-        # (5) time_evolution_extractionモジュールに渡してnext_TimeStamp関係を生成
-        calculate_event_evolution_relationship(item_entity_nodes, item_predicate_nodes, original_sentences, doc_created_edge_indexes)
+        # (4-3) entity_realation_extractionモジュールに渡して自動生成関係を生成
+        extract_entity_relationship(item_entity_nodes, item_predicate_nodes, item_edges, original_sentences, doc_created_edge_indexes)
 
     # (6) キャッシュをクリアする
     _current_item_cache["item_name"] = None

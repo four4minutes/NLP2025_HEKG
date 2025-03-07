@@ -1,5 +1,5 @@
-# NLP2025_HEKG
-言語処理学会第31回年次大会 (NLP2025) で発表した論文で使用されたプログラムを公開するものである。本プログラムは、失敗知識データベース [1] に掲載されている文書を分析し、階層的構造を持つナレッジグラフ (Knowledge Graph) を構築する。データベースにはグラフデータベースである [neo4j community edition][2] を利用する。ナレッジグラフの詳細や実装方法については発表論文をご参照ください。本プログラムは Python で実装されている。
+# 階層的ナレッジグラフを用いた事故事例文書の述語中心の構造化手法
+言語処理学会第31回年次大会 (NLP2025) で発表した論文で使用されたプログラムを公開するものである。本プログラムは、失敗知識データベース [1] に掲載されている文書を分析し、階層的構造を持つナレッジグラフ (Knowledge Graph) を構築する。データベースにはグラフデータベースである neo4j community edition[2] を利用する。ナレッジグラフの詳細や実装方法については発表論文をご参照ください。本プログラムは Python で実装されている。
 
 ## 利用方法
 本プログラムは Python 3.9 で動作確認を行っている。
@@ -22,9 +22,14 @@ base_url = "https://www.shippai.org/fkd"  # 下位ページで共通となるURL
 ```
 
 ### document parsing
+入力としてはscraperで出力されたjson形式を想定している。そのため。scraperをあらかじめ実行する必要がある。
 必要なPythonパッケージ : OpenAI API, Sentence Transformers
 ```bash
 pip install openai sentence-transformers
+```
+main.py を実行すると、グラフデータベースに埋め込みできるノードとエッジのリストがCSVファイル(resultsフォルダ内)で出力される。詳細な分析結果はlogsフォルダ内にあるログファイルから確認できる。 
+```bash
+python source/document_parsing/main.py
 ```
 
 
