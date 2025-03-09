@@ -4,17 +4,19 @@
 import csv
 import os
 
-def export_to_csv(category_list, entity_list, predicate_list, edge_list, output_dir="."):
+def export_to_csv(category_list, entity_list, predicate_list, edge_list, rel_list, output_dir="."):
     '''
-    4つのCSVファイルを出力する:
+    5つのCSVファイルを出力する:
       1) category_structure_node.csv
       2) entity_structure_node.csv
       3) predicate_structure_node.csv
       4) edge.csv
+      5) auto_generated_relation.csv
     - category_list : カテゴリノード一覧
     - entity_list : エンティティノード一覧
     - predicate_list : 述語構造ノード一覧
     - edge_list : エッジ一覧
+    - rel_list : 自動生成エッジ辞書
     - output_dir : 出力先ディレクトリ（デフォルトは現ディレクトリ）
     '''
     if not os.path.exists(output_dir):
@@ -74,5 +76,13 @@ def export_to_csv(category_list, entity_list, predicate_list, edge_list, output_
                 e.get("from", ""),
                 e.get("to", "")
             ])
+    
+    # (5) 自動生成エッジの定義を書き込む
+    auto_generated_csv_path = os.path.join(output_dir, "auto_generated_relation.csv")
+    with open(auto_generated_csv_path, mode="w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["label", "explanation"])
+        for rel in rel_list:
+            writer.writerow([rel["label"], rel["explanation"]])
 
     print(f"CSV files have been created in: {output_dir}")

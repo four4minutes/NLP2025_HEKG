@@ -272,7 +272,8 @@ def extract_predicates(sentence: str) -> tuple:
     )
 
     content = response.choices[0].message.content.strip()
-    log_token_usage(response.usage.total_tokens)
+    if hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
+            log_token_usage(response.usage.total_tokens)
 
     event_predicates = []
     entity_predicates = []
@@ -801,7 +802,8 @@ def extract_entity_and_predicate_structures(sentence: str, event_predicates: lis
         )
 
         content = response.choices[0].message.content.strip()
-        log_token_usage(response.usage.total_tokens)
+        if hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
+            log_token_usage(response.usage.total_tokens)
 
         # (4) 結果から述語項構造部分とエンティティ部分を抽出
         predicate_argument_section = re.search(r"\[述語項構造\](.*?)\[エンティティ\]", content, re.DOTALL)

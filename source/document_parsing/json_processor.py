@@ -50,6 +50,7 @@ def finalize_current_item(doc_created_edge_indexes=None):
         # (3) next_TimeStamp関係を生成
         # (3-1) 除外条件に該当する関係を持つノードは分析から除外
         excluded_nodes = set()
+        all_edges = get_edge()
         for e in all_edges:
             if e["type"] in EXCLUDE_RELATION_TARGETS:
                 excluded_nodes.add(e["to"])

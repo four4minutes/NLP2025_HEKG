@@ -22,7 +22,7 @@ base_url = "https://www.shippai.org/fkd"  # 下位ページで共通となるURL
 ```
 
 ### document parsing
-入力としてはscraperで出力されたjson形式を想定している。そのため。scraperをあらかじめ実行する必要がある。
+入力としてはscraperで出力されたjson形式を想定している。そのため。scraperをあらかじめ実行する必要がある。  
 必要なPythonパッケージ : OpenAI API, Sentence Transformers
 ```bash
 pip install openai sentence-transformers
@@ -31,7 +31,12 @@ main.py を実行すると、グラフデータベースに埋め込みできる
 ```bash
 python source/document_parsing/main.py
 ```
+実行前に、以下の変数を設定できる。
+```python title="./source/document_parsing/main.py"
+input_filename = "test.json" # 入力されるJSON形式ファイル
 
+export_to_csv(category_list, entity_list, predicate_list, edge_list, new_relation_list, "results") # 出力されるCSV結果ファイルが保存されるフォルダ名
+```
 
 ## 発表文献
 [論文本文](https://www.anlp.jp/proceedings/annual_meeting/2025/pdf_dir/B7-2.pdf)

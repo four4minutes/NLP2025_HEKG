@@ -5,7 +5,7 @@ import re
 import math
 from collections import defaultdict, Counter
 from openai import OpenAI
-from source.document_parsing.logger import log_to_file
+from source.document_parsing.logger import log_to_file, log_token_usage
 from source.document_parsing.edge_maker import append_edge_info
 from source.document_parsing.text_utils import convert_predicate_to_text, STOP_WORDS
 
@@ -97,6 +97,8 @@ def tokenize_sentence(lines_for_tokenize, node_type_dict):
             temperature=0.0
         )
         content = response.choices[0].message.content.strip()
+        if hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
+            log_token_usage(response.usage.total_tokens)
     except Exception as e:
         log_to_file(f"[ERROR] OpenAI API call failed: {e}")
         return [], {}

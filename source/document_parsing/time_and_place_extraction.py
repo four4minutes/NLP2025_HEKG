@@ -80,7 +80,8 @@ def extract_time_and_place(sentence: str) -> dict:
         )
 
         content = response.choices[0].message.content.strip()
-        log_token_usage(response.usage.total_tokens)
+        if hasattr(response, "usage") and hasattr(response.usage, "total_tokens"):
+            log_token_usage(response.usage.total_tokens)
 
         time_and_place = {
             "time": [],

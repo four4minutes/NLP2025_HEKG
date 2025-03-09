@@ -3,12 +3,8 @@
 import json
 import os
 from source.document_parsing.logger import initialize_logger
-from source.document_parsing.node_maker import (
-    get_category_structure,
-    get_entity_structure,
-    get_predicate_structure
-)
-from source.document_parsing.edge_maker import get_edge
+from source.document_parsing.node_maker import get_category_structure, get_entity_structure, get_predicate_structure
+from source.document_parsing.edge_maker import get_edge, get_auto_generated_edge_dictionary
 from json_processor import process_json
 from csv_exporter import export_to_csv
 
@@ -36,8 +32,9 @@ def main():
     entity_list = get_entity_structure()
     predicate_list = get_predicate_structure()
     edge_list = get_edge()
+    new_relation_list = get_auto_generated_edge_dictionary()
 
-    export_to_csv(category_list, entity_list, predicate_list, edge_list, "results")
+    export_to_csv(category_list, entity_list, predicate_list, edge_list, new_relation_list, "results")
 
 if __name__ == "__main__":
     main()
